@@ -9,7 +9,6 @@ import {
   BarChart3,
   Settings,
   Users,
-  Coins,
   LogOut,
   Menu,
   X
@@ -24,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { TokenBalance } from '@/components/tokens';
 
 interface DesktopSidebarProps {
   open: boolean;
@@ -84,10 +84,7 @@ export function DesktopSidebar({ open, onOpenChange }: DesktopSidebarProps) {
 
           {/* Token balance */}
           <div className="border-b px-4 py-3">
-            <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
-              <Coins className="h-4 w-4 text-amber-500" />
-              <span className="text-sm font-medium">250 tokens</span>
-            </div>
+            <TokenBalance showLabel={true} size="md" />
           </div>
 
           {/* Main navigation */}

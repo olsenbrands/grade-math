@@ -212,25 +212,25 @@
 
 ---
 
-## Phase 8: Token System (6-8 hrs)
+## Phase 8: Token System (6-8 hrs) ✅
 
 ### 8.1 Token Ledger
-- [ ] Create token service
-- [ ] Implement balance queries
-- [ ] Record transactions (debit/credit)
-- [ ] Handle concurrent updates safely
+- [x] Create token service
+- [x] Implement balance queries
+- [x] Record transactions (debit/credit)
+- [x] Handle concurrent updates safely
 
 ### 8.2 Token UI
-- [ ] Display balance in header/nav
-- [ ] Show low balance warnings
-- [ ] Block operations at zero balance
-- [ ] Show cost before operations
+- [x] Display balance in header/nav
+- [x] Show low balance warnings
+- [x] Block operations at zero balance
+- [x] Show cost before operations
 
 ### 8.3 Token Rules
-- [ ] Define cost per operation type
-- [ ] Implement bulk discount logic
-- [ ] Refund on processing failure
-- [ ] Admin token grants
+- [x] Define cost per operation type
+- [x] Implement bulk discount logic
+- [x] Refund on processing failure
+- [x] Admin token grants
 
 ---
 

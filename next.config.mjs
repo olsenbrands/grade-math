@@ -34,6 +34,8 @@ const withPWA = withPWAInit({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Use webpack for PWA compatibility (next-pwa requires webpack)
+  turbopack: {},
   images: {
     remotePatterns: [
       {

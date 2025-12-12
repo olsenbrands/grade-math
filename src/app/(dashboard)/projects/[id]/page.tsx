@@ -16,6 +16,8 @@ import {
   type ProjectWithStats,
 } from '@/lib/services/projects';
 import { getAnswerKey } from '@/lib/services/answer-keys';
+import { uploadMultipleSubmissions } from '@/lib/services/submissions';
+import { CameraCapture, FileUpload, SubmissionList } from '@/components/submissions';
 import type { AnswerKey } from '@/types/database';
 
 export default function ProjectDetailPage() {
@@ -31,6 +33,9 @@ export default function ProjectDetailPage() {
   const [editForm, setEditForm] = useState({ name: '', description: '', date: '' });
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [submissionKey, setSubmissionKey] = useState(0); // For refreshing SubmissionList
 
   const loadProject = useCallback(async () => {
     try {
@@ -374,54 +379,82 @@ export default function ProjectDetailPage() {
             <CardTitle>Submissions</CardTitle>
             <CardDescription>Student homework submissions</CardDescription>
           </div>
-          <Button>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              className="mr-2 h-4 w-4"
-            >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" x2="12" y1="3" y2="15" />
-            </svg>
-            Upload Submissions
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowCamera(true)}>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                className="mr-2 h-4 w-4"
+              >
+                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                <circle cx="12" cy="13" r="3" />
+              </svg>
+              Camera
+            </Button>
+            <Button onClick={() => setShowUpload(true)}>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                className="mr-2 h-4 w-4"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" x2="12" y1="3" y2="15" />
+              </svg>
+              Upload Files
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          {(project.submission_count || 0) > 0 ? (
-            <p className="text-muted-foreground">
-              {project.submission_count} submissions
-            </p>
-          ) : (
-            <div className="text-center py-6">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  className="h-6 w-6 text-muted-foreground"
-                >
-                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                  <polyline points="14,2 14,8 20,8" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold">No submissions yet</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Upload student homework to start grading
-              </p>
-            </div>
-          )}
+          <SubmissionList
+            key={submissionKey}
+            projectId={projectId}
+            onRefresh={() => {
+              setSubmissionKey((k) => k + 1);
+              loadProject();
+            }}
+          />
         </CardContent>
       </Card>
+
+      {/* Upload Modal */}
+      {showUpload && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl">
+            <FileUpload
+              projectId={projectId}
+              onUpload={async (files) => {
+                await uploadMultipleSubmissions(projectId, files);
+                setSubmissionKey((k) => k + 1);
+                loadProject();
+              }}
+              onClose={() => setShowUpload(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Camera Modal */}
+      {showCamera && (
+        <CameraCapture
+          onCapture={async (file) => {
+            await uploadMultipleSubmissions(projectId, [file]);
+            setSubmissionKey((k) => k + 1);
+            loadProject();
+          }}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
 
       {/* Danger Zone */}
       <Card className="border-destructive/50">

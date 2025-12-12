@@ -112,15 +112,15 @@
 
 ---
 
-## Phase 5: Submission Workflows (16-20 hrs)
+## Phase 5: Submission Workflows (16-20 hrs) ✅
 
 ### 5.1 Mobile Camera Capture
-- [ ] Implement camera hook (useCamera)
-- [ ] Build camera capture component
-- [ ] Add alignment guide overlay
-- [ ] Implement image capture
-- [ ] Add manual rotation control
-- [ ] Upload to Supabase Storage
+- [x] Implement camera hook (useCamera)
+- [x] Build camera capture component
+- [x] Add alignment guide overlay
+- [x] Implement image capture
+- [x] Add manual rotation control
+- [x] Upload to Supabase Storage
 
 ### 5.2 Batch Scan Mode
 - [ ] Implement edge detection (optional)
@@ -128,13 +128,14 @@
 - [ ] Auto-capture on stability
 - [ ] Queue multiple captures
 - [ ] Batch upload handling
+- **Note:** Deferred to future enhancement
 
 ### 5.3 Desktop File Upload
-- [ ] Build drag-and-drop zone
-- [ ] Implement multi-file selection
-- [ ] Add progress indicators
-- [ ] Show thumbnail previews
-- [ ] Handle HEIC conversion
+- [x] Build drag-and-drop zone
+- [x] Implement multi-file selection
+- [x] Add progress indicators
+- [x] Show thumbnail previews
+- [ ] Handle HEIC conversion (deferred)
 
 ### 5.4 PDF Processing
 - [ ] Implement PDF to image conversion
@@ -142,13 +143,14 @@
 - [ ] Preserve page order
 - [ ] Create submission per page
 - [ ] Handle large PDFs gracefully
+- **Note:** Deferred to future enhancement
 
 ### 5.5 Submission Management
-- [ ] Build submission list view
-- [ ] Show processing status
-- [ ] Enable manual student assignment
-- [ ] Display thumbnails
-- [ ] Filter by status
+- [x] Build submission list view
+- [x] Show processing status
+- [x] Enable manual student assignment
+- [x] Display thumbnails
+- [x] Filter by status
 
 ---
 

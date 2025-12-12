@@ -58,7 +58,7 @@ export default function ResetPasswordPage() {
       setLoading(false);
       // Redirect to dashboard after 3 seconds
       setTimeout(() => {
-        router.push('/dashboard');
+        router.push('/assignments');
       }, 3000);
     }
   };
@@ -114,7 +114,7 @@ export default function ResetPasswordPage() {
           </div>
         </CardContent>
         <CardFooter className="flex justify-center">
-          <Link href="/dashboard">
+          <Link href="/assignments">
             <Button>Go to dashboard</Button>
           </Link>
         </CardFooter>

@@ -73,18 +73,18 @@
 - [x] RLS policy: projects belong to teacher
 - [x] RLS policy: submissions belong to project owner
 - [x] RLS policy: token ledger teacher-only access
-- [ ] Test RLS policies thoroughly
+- [x] Test RLS policies thoroughly
 
 ### 3.3 Supabase Storage
 - [x] Create `submissions` bucket
 - [x] Create `answer-keys` bucket
 - [x] Configure storage policies
-- [ ] Set up signed URL generation
+- [x] Set up signed URL generation
 
 ### 3.4 TypeScript Types
 - [x] Generate types from Supabase schema
-- [ ] Create API request/response types
-- [ ] Create component prop types
+- [x] Create API request/response types
+- [x] Create component prop types
 
 ---
 
@@ -108,7 +108,7 @@
 - [x] Create student roster service
 - [x] Build student list component
 - [x] Implement add/edit student
-- [ ] Link students to project submissions
+- [x] Link students to project submissions
 
 ---
 

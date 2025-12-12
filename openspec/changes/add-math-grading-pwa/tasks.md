@@ -191,23 +191,23 @@
 
 ---
 
-## Phase 7: Student Grouping (8-10 hrs)
+## Phase 7: Student Grouping (8-10 hrs) ✅
 
 ### 7.1 Name Detection
-- [ ] Create name extraction prompt
-- [ ] Implement confidence scoring
-- [ ] Handle multiple name formats
-- [ ] Store detected names
+- [x] Create name extraction prompt
+- [x] Implement confidence scoring
+- [x] Handle multiple name formats
+- [x] Store detected names
 
 ### 7.2 Auto-Grouping
-- [ ] Match detected name to roster
-- [ ] Auto-assign high-confidence matches
-- [ ] Flag ambiguous matches for review
+- [x] Match detected name to roster
+- [x] Auto-assign high-confidence matches
+- [x] Flag ambiguous matches for review
 
 ### 7.3 Manual Assignment
-- [ ] Build student assignment dropdown
-- [ ] Enable "Add new student" option
-- [ ] Save teacher corrections
+- [x] Build student assignment dropdown
+- [x] Enable "Add new student" option
+- [x] Save teacher corrections
 - [ ] Train grouping model (future)
 
 ---

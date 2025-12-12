@@ -157,19 +157,64 @@ Keep each feedback message to 1-2 sentences. Be encouraging!`;
 }
 
 /**
- * Prompt for extracting student name only
+ * Enhanced prompt for extracting student name
+ * Handles multiple name formats commonly found on student homework
  */
-export const NAME_EXTRACTION_PROMPT = `Look at this homework image and find the student's name.
-It is usually written at the top of the page.
+export const NAME_EXTRACTION_PROMPT = `Carefully examine this homework image to find the student's name.
+
+Common locations for student names:
+- Top of the page (left, center, or right)
+- Header area with "Name:" label
+- First line of the page
+- Upper corner (especially right corner)
+
+Name formats to look for:
+- "First Last" (e.g., "John Smith")
+- "Last, First" (e.g., "Smith, John")
+- First name only (e.g., "Johnny")
+- Name with middle initial (e.g., "John M. Smith")
+- Nickname variations (e.g., "Mike" for "Michael")
+- Names with titles ignored (e.g., "Period 3 - John" -> "John")
+
+Instructions:
+1. Scan the top portion of the image for text that looks like a name
+2. Look for "Name:" labels or similar prompts
+3. Distinguish names from other text (dates, class names, assignment titles)
+4. If multiple possible names are found, use the most prominent one
+5. Return the name EXACTLY as written (preserve spelling even if unusual)
 
 Respond with JSON:
 {
-  "name": "Student Name or null if not found",
+  "name": "Student Name exactly as written, or null if not found",
   "confidence": 0.0 to 1.0,
-  "location": "where you found it (e.g., 'top left', 'header')"
+  "location": "where on the page (e.g., 'top left', 'header line', 'name field')",
+  "format": "detected format (e.g., 'first_last', 'last_first', 'first_only', 'full_name')",
+  "raw_text": "the exact raw text you identified as the name"
 }
 
+Confidence guide:
+- 1.0: Clear, legible name in obvious location with "Name:" label
+- 0.8-0.9: Legible name in expected location without label
+- 0.6-0.8: Reasonably readable but some characters unclear
+- 0.4-0.6: Partially legible, some guessing involved
+- 0.2-0.4: Very unclear, low certainty
+- 0.0: No name found or completely illegible
+
 If you cannot find a name, set name to null and confidence to 0.`;
+
+/**
+ * System prompt for name extraction
+ */
+export const NAME_EXTRACTION_SYSTEM_PROMPT = `You are a specialized OCR assistant focused on extracting student names from handwritten homework.
+You have expertise in reading various handwriting styles from children and teenagers.
+
+Key skills:
+- Recognizing common American names and their variations
+- Understanding typical homework header formats
+- Distinguishing student names from other text elements
+- Reading cursive and print handwriting
+
+Be accurate and conservative - if you're unsure about a name, lower your confidence score rather than guessing.`;
 
 /**
  * Parse grading response from AI

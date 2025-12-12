@@ -3,3 +3,4 @@ export * from './students';
 export * from './answer-keys';
 export * from './tokens';
 export * from './submissions';
+export * from './student-grouping';

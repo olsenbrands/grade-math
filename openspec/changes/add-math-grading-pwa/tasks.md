@@ -34,25 +34,25 @@
 
 ---
 
-## Phase 2: Authentication & Onboarding (8-12 hrs)
+## Phase 2: Authentication & Onboarding (8-12 hrs) ✅
 
 ### 2.1 Supabase Auth Setup
-- [ ] Configure email/password auth
-- [ ] Configure Google OAuth provider
-- [ ] Set up auth callback route
-- [ ] Implement auth middleware
+- [x] Configure email/password auth
+- [ ] Configure Google OAuth provider (pending: needs Google Cloud credentials)
+- [x] Set up auth callback route
+- [x] Implement auth middleware
 
 ### 2.2 Auth UI
-- [ ] Create login page
-- [ ] Create signup page
-- [ ] Implement password reset flow
-- [ ] Add Google sign-in button
+- [x] Create login page
+- [x] Create signup page
+- [x] Implement password reset flow
+- [x] Add Google sign-in button
 
 ### 2.3 Onboarding Flow
-- [ ] Create onboarding page
-- [ ] Build profile form (name, school, grade level)
-- [ ] Implement profile completion check
-- [ ] Add PWA install prompt
+- [x] Create onboarding page
+- [x] Build profile form (name, school, grade level)
+- [x] Implement profile completion check
+- [x] Add PWA install prompt
 
 ---
 

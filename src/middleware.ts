@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Protected routes - redirect to login if not authenticated
-  const protectedPaths = ['/dashboard', '/projects', '/settings'];
+  const protectedPaths = ['/dashboard', '/projects', '/settings', '/onboarding'];
   const isProtectedPath = protectedPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
   );
@@ -48,6 +48,37 @@ export async function middleware(request: NextRequest) {
     url.pathname = '/login';
     url.searchParams.set('redirect', request.nextUrl.pathname);
     return NextResponse.redirect(url);
+  }
+
+  // Check profile completion for authenticated users on protected routes (except onboarding)
+  if (user && isProtectedPath && !request.nextUrl.pathname.startsWith('/onboarding')) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name, school_name')
+      .eq('id', user.id)
+      .single();
+
+    // If profile doesn't exist or is incomplete, redirect to onboarding
+    if (!profile || !profile.full_name || !profile.school_name) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/onboarding';
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // If user is on onboarding but already has complete profile, redirect to dashboard
+  if (user && request.nextUrl.pathname.startsWith('/onboarding')) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name, school_name')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.full_name && profile?.school_name) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
   }
 
   // Auth routes - redirect to dashboard if already authenticated

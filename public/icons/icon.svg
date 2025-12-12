@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="64" fill="#2563eb"/>
+  <text x="256" y="200" font-family="system-ui, sans-serif" font-size="120" font-weight="bold" fill="white" text-anchor="middle">GM</text>
+  <text x="256" y="340" font-family="system-ui, sans-serif" font-size="48" fill="white" text-anchor="middle">Grade</text>
+  <text x="256" y="400" font-family="system-ui, sans-serif" font-size="48" fill="white" text-anchor="middle">Math</text>
+  <path d="M100 420 L150 460 L220 380" stroke="#22c55e" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

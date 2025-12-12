@@ -1,0 +1,317 @@
+# Math Homework AI Grading App - Tasks
+
+**Change:** add-math-grading-pwa
+**PRD:** [./prd.md](./prd.md)
+**Status:** PROPOSED
+**Estimated Effort:** 80-120 hours
+
+---
+
+## Phase 1: Project Foundation (12-16 hrs)
+
+### 1.1 Next.js PWA Setup
+- [x] Initialize Next.js 14 with App Router
+- [x] Configure TypeScript strict mode
+- [x] Set up Tailwind CSS
+- [x] Install and configure next-pwa
+- [x] Create PWA manifest.json
+- [x] Set up service worker
+- [ ] Configure Vercel deployment
+
+### 1.2 Supabase Integration
+- [ ] Create Supabase project
+- [ ] Configure environment variables
+- [ ] Set up Supabase client (browser)
+- [ ] Set up Supabase server client (SSR)
+- [ ] Configure Supabase middleware for auth
+
+### 1.3 UI Foundation
+- [ ] Install shadcn/ui
+- [ ] Set up base components (Button, Input, Card, etc.)
+- [ ] Create responsive layout shell
+- [ ] Implement mobile-first navigation
+- [ ] Create loading and error states
+
+---
+
+## Phase 2: Authentication & Onboarding (8-12 hrs)
+
+### 2.1 Supabase Auth Setup
+- [ ] Configure email/password auth
+- [ ] Configure Google OAuth provider
+- [ ] Set up auth callback route
+- [ ] Implement auth middleware
+
+### 2.2 Auth UI
+- [ ] Create login page
+- [ ] Create signup page
+- [ ] Implement password reset flow
+- [ ] Add Google sign-in button
+
+### 2.3 Onboarding Flow
+- [ ] Create onboarding page
+- [ ] Build profile form (name, school, grade level)
+- [ ] Implement profile completion check
+- [ ] Add PWA install prompt
+
+---
+
+## Phase 3: Database & Core Data Models (10-14 hrs)
+
+### 3.1 Schema Creation
+- [ ] Create `users` extension table
+- [ ] Create `projects` table
+- [ ] Create `student_roster` table
+- [ ] Create `project_answer_keys` table
+- [ ] Create `submissions` table
+- [ ] Create `graded_results` table
+- [ ] Create `processing_queue` table
+- [ ] Create `token_ledger` table
+
+### 3.2 Row Level Security
+- [ ] RLS policy: users own their data
+- [ ] RLS policy: projects belong to teacher
+- [ ] RLS policy: submissions belong to project owner
+- [ ] RLS policy: token ledger teacher-only access
+- [ ] Test RLS policies thoroughly
+
+### 3.3 Supabase Storage
+- [ ] Create `submissions` bucket
+- [ ] Create `answer-keys` bucket
+- [ ] Configure storage policies
+- [ ] Set up signed URL generation
+
+### 3.4 TypeScript Types
+- [ ] Generate types from Supabase schema
+- [ ] Create API request/response types
+- [ ] Create component prop types
+
+---
+
+## Phase 4: Project Management (12-16 hrs)
+
+### 4.1 Project CRUD
+- [ ] Create project service
+- [ ] Build project list page
+- [ ] Build create project page
+- [ ] Build project detail page
+- [ ] Implement project archiving
+- [ ] Add project search/filter
+
+### 4.2 Answer Key Management
+- [ ] Build answer key upload UI
+- [ ] Implement manual answer entry
+- [ ] Store answer keys in Supabase Storage
+- [ ] Display answer key status on project
+
+### 4.3 Student Roster
+- [ ] Create student roster service
+- [ ] Build student list component
+- [ ] Implement add/edit student
+- [ ] Link students to project submissions
+
+---
+
+## Phase 5: Submission Workflows (16-20 hrs)
+
+### 5.1 Mobile Camera Capture
+- [ ] Implement camera hook (useCamera)
+- [ ] Build camera capture component
+- [ ] Add alignment guide overlay
+- [ ] Implement image capture
+- [ ] Add manual rotation control
+- [ ] Upload to Supabase Storage
+
+### 5.2 Batch Scan Mode
+- [ ] Implement edge detection (optional)
+- [ ] Build hands-free capture UI
+- [ ] Auto-capture on stability
+- [ ] Queue multiple captures
+- [ ] Batch upload handling
+
+### 5.3 Desktop File Upload
+- [ ] Build drag-and-drop zone
+- [ ] Implement multi-file selection
+- [ ] Add progress indicators
+- [ ] Show thumbnail previews
+- [ ] Handle HEIC conversion
+
+### 5.4 PDF Processing
+- [ ] Implement PDF to image conversion
+- [ ] Split multi-page PDFs
+- [ ] Preserve page order
+- [ ] Create submission per page
+- [ ] Handle large PDFs gracefully
+
+### 5.5 Submission Management
+- [ ] Build submission list view
+- [ ] Show processing status
+- [ ] Enable manual student assignment
+- [ ] Display thumbnails
+- [ ] Filter by status
+
+---
+
+## Phase 6: AI Grading Pipeline (16-20 hrs)
+
+### 6.1 AI Provider Abstraction
+- [ ] Create provider interface
+- [ ] Implement Groq provider (Llama 3.2 Vision)
+- [ ] Implement OpenAI provider (GPT-4o)
+- [ ] Implement Anthropic provider (Claude)
+- [ ] Add fallback logic
+
+### 6.2 Background Processing
+- [ ] Set up Vercel Background Functions
+- [ ] Create processing queue handler
+- [ ] Implement job pickup and locking
+- [ ] Add retry logic with backoff
+- [ ] Handle timeouts gracefully
+
+### 6.3 Grading Logic
+- [ ] Build image enhancement step
+- [ ] Implement OCR extraction
+- [ ] Parse math problem segments
+- [ ] Extract student answers
+- [ ] Compare to answer key
+- [ ] Calculate scores
+- [ ] Generate confidence levels
+
+### 6.4 Feedback Generation
+- [ ] Create feedback prompt template
+- [ ] Generate student-friendly explanations
+- [ ] Format for print/screenshot
+- [ ] Make feedback optional (token cost)
+
+### 6.5 Results Storage
+- [ ] Write graded results to database
+- [ ] Update submission status
+- [ ] Link results to student groups
+- [ ] Calculate aggregate scores
+
+---
+
+## Phase 7: Student Grouping (8-10 hrs)
+
+### 7.1 Name Detection
+- [ ] Create name extraction prompt
+- [ ] Implement confidence scoring
+- [ ] Handle multiple name formats
+- [ ] Store detected names
+
+### 7.2 Auto-Grouping
+- [ ] Match detected name to roster
+- [ ] Auto-assign high-confidence matches
+- [ ] Flag ambiguous matches for review
+
+### 7.3 Manual Assignment
+- [ ] Build student assignment dropdown
+- [ ] Enable "Add new student" option
+- [ ] Save teacher corrections
+- [ ] Train grouping model (future)
+
+---
+
+## Phase 8: Token System (6-8 hrs)
+
+### 8.1 Token Ledger
+- [ ] Create token service
+- [ ] Implement balance queries
+- [ ] Record transactions (debit/credit)
+- [ ] Handle concurrent updates safely
+
+### 8.2 Token UI
+- [ ] Display balance in header/nav
+- [ ] Show low balance warnings
+- [ ] Block operations at zero balance
+- [ ] Show cost before operations
+
+### 8.3 Token Rules
+- [ ] Define cost per operation type
+- [ ] Implement bulk discount logic
+- [ ] Refund on processing failure
+- [ ] Admin token grants
+
+---
+
+## Phase 9: Results & Reporting (6-8 hrs)
+
+### 9.1 Results Display
+- [ ] Build student results card
+- [ ] Show score breakdown
+- [ ] Display confidence indicators
+- [ ] Highlight needs-review items
+
+### 9.2 Project Summary
+- [ ] Calculate class statistics
+- [ ] Show completion progress
+- [ ] List students with scores
+- [ ] Filter by score/status
+
+### 9.3 Feedback Sharing
+- [ ] Generate shareable feedback view
+- [ ] Optimize for printing
+- [ ] Mobile-friendly display
+
+---
+
+## Phase 10: Polish & Launch (6-10 hrs)
+
+### 10.1 Performance
+- [ ] Optimize image loading
+- [ ] Implement pagination
+- [ ] Add loading skeletons
+- [ ] Test on slow connections
+
+### 10.2 Error Handling
+- [ ] Global error boundary
+- [ ] Toast notifications
+- [ ] Graceful degradation
+- [ ] Offline awareness
+
+### 10.3 Testing
+- [ ] Unit tests for services
+- [ ] Integration tests for API routes
+- [ ] E2E tests for critical flows
+- [ ] Manual device testing
+
+### 10.4 Documentation
+- [ ] Update README
+- [ ] Document environment setup
+- [ ] API documentation
+- [ ] User guide basics
+
+---
+
+## Summary
+
+| Phase | Tasks | Est. Hours |
+|-------|-------|------------|
+| 1. Foundation | 16 | 12-16 |
+| 2. Auth | 10 | 8-12 |
+| 3. Database | 16 | 10-14 |
+| 4. Projects | 12 | 12-16 |
+| 5. Submissions | 20 | 16-20 |
+| 6. AI Pipeline | 18 | 16-20 |
+| 7. Grouping | 8 | 8-10 |
+| 8. Tokens | 9 | 6-8 |
+| 9. Results | 9 | 6-8 |
+| 10. Polish | 12 | 6-10 |
+| **Total** | **130** | **80-120 hrs** |
+
+---
+
+## Dependencies
+
+- Phase 2 (Auth) blocks Phase 3-10
+- Phase 3 (Database) blocks Phase 4-9
+- Phase 5 (Submissions) blocks Phase 6 (Grading)
+- Phase 6 (Grading) blocks Phase 7 (Grouping)
+- Phase 3 (Token table) blocks Phase 8
+
+## Parallelizable Work
+
+- Phase 4 (Projects) and Phase 5 (Submissions) can partially overlap
+- Phase 7 (Grouping) and Phase 8 (Tokens) can run in parallel
+- Phase 9 (Results) can start once Phase 6 is 50% complete
+- UI polish can happen throughout later phases

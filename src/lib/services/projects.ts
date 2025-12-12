@@ -5,6 +5,8 @@ export interface ProjectWithStats extends Project {
   submission_count?: number;
   graded_count?: number;
   pending_count?: number;
+  needs_review_count?: number;
+  processing_count?: number;
 }
 
 export interface ProjectFilters {
@@ -15,7 +17,7 @@ export interface ProjectFilters {
 }
 
 /**
- * Get all projects for the current user
+ * Get all projects for the current user with detailed stats
  */
 export async function getProjects(filters?: ProjectFilters): Promise<ProjectWithStats[]> {
   const supabase = createClient();
@@ -24,7 +26,7 @@ export async function getProjects(filters?: ProjectFilters): Promise<ProjectWith
     .from('projects')
     .select(`
       *,
-      submissions:submissions(count)
+      submissions:submissions(id, status)
     `)
     .order('created_at', { ascending: false });
 
@@ -55,13 +57,18 @@ export async function getProjects(filters?: ProjectFilters): Promise<ProjectWith
     throw new Error('Failed to fetch projects');
   }
 
-  // Transform the data to include submission counts
-  return (data || []).map((project: Record<string, unknown>) => ({
-    ...project,
-    submission_count: Array.isArray(project.submissions)
-      ? (project.submissions[0] as { count: number })?.count || 0
-      : 0,
-  })) as ProjectWithStats[];
+  // Transform the data to include submission counts by status
+  return (data || []).map((project: Record<string, unknown>) => {
+    const submissions = (project.submissions || []) as Array<{ id: string; status: string }>;
+    return {
+      ...project,
+      submission_count: submissions.length,
+      graded_count: submissions.filter(s => s.status === 'completed').length,
+      pending_count: submissions.filter(s => s.status === 'pending').length,
+      processing_count: submissions.filter(s => s.status === 'processing').length,
+      needs_review_count: submissions.filter(s => s.status === 'needs_review').length,
+    };
+  }) as ProjectWithStats[];
 }
 
 /**
@@ -100,13 +107,17 @@ export async function getProject(id: string): Promise<ProjectWithStats | null> {
   // Calculate stats
   const submissions = (data.submissions || []) as Array<{ status: string }>;
   const graded_count = submissions.filter(s => s.status === 'completed').length;
-  const pending_count = submissions.filter(s => ['pending', 'processing'].includes(s.status)).length;
+  const pending_count = submissions.filter(s => s.status === 'pending').length;
+  const processing_count = submissions.filter(s => s.status === 'processing').length;
+  const needs_review_count = submissions.filter(s => s.status === 'needs_review').length;
 
   return {
     ...data,
     submission_count: submissions.length,
     graded_count,
     pending_count,
+    processing_count,
+    needs_review_count,
   } as ProjectWithStats;
 }
 

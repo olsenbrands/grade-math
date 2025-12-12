@@ -5,8 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useCamera } from '@/hooks/useCamera';
 
+interface CapturedPage {
+  url: string;
+  blob: Blob;
+  rotation: number;
+}
+
 interface CameraCaptureProps {
-  onCapture: (file: File) => void;
+  onCapture: (files: File[]) => void;
   onClose?: () => void;
 }
 
@@ -26,6 +32,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [rotation, setRotation] = useState(0);
+  const [pages, setPages] = useState<CapturedPage[]>([]);
 
   const handleCapture = useCallback(() => {
     const blob = capture();
@@ -47,19 +54,34 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     setRotation((r) => (r + 90) % 360);
   }, []);
 
-  const handleConfirm = useCallback(() => {
-    if (!capturedImage) return;
+  // Remove a saved page
+  const handleRemovePage = useCallback((index: number) => {
+    setPages((prev) => {
+      const page = prev[index];
+      if (page) {
+        URL.revokeObjectURL(page.url);
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  }, []);
 
-    // If rotated, we need to apply rotation
-    if (rotation !== 0) {
+  // Helper to apply rotation to an image blob
+  const applyRotation = useCallback((imageUrl: string, rot: number): Promise<Blob> => {
+    return new Promise((resolve) => {
+      if (rot === 0) {
+        fetch(imageUrl)
+          .then((r) => r.blob())
+          .then(resolve);
+        return;
+      }
+
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Swap dimensions for 90/270 rotation
-        if (rotation === 90 || rotation === 270) {
+        if (rot === 90 || rot === 270) {
           canvas.width = img.height;
           canvas.height = img.width;
         } else {
@@ -67,49 +89,157 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           canvas.height = img.height;
         }
 
-        // Rotate and draw
         ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.rotate((rot * Math.PI) / 180);
         ctx.drawImage(img, -img.width / 2, -img.height / 2);
 
         canvas.toBlob(
           (blob) => {
-            if (blob) {
-              const file = new File([blob], `capture-${Date.now()}.jpg`, {
-                type: 'image/jpeg',
-              });
-              onCapture(file);
-              handleRetake();
-              stop();
-            }
+            if (blob) resolve(blob);
           },
           'image/jpeg',
           0.9
         );
       };
-      img.src = capturedImage;
-    } else {
-      // No rotation, use original blob
-      fetch(capturedImage)
-        .then((r) => r.blob())
-        .then((blob) => {
-          const file = new File([blob], `capture-${Date.now()}.jpg`, {
-            type: 'image/jpeg',
-          });
-          onCapture(file);
-          handleRetake();
-          stop();
-        });
+      img.src = imageUrl;
+    });
+  }, []);
+
+  // Add current image as a page and continue capturing
+  const handleAddPage = useCallback(async () => {
+    if (!capturedImage) return;
+
+    const blob = await applyRotation(capturedImage, rotation);
+    setPages((prev) => [...prev, { url: capturedImage, blob, rotation }]);
+    setCapturedImage(null);
+    setRotation(0);
+
+    // Force restart camera for next capture
+    stop();
+    // Small delay to ensure stream is fully stopped
+    await new Promise(resolve => setTimeout(resolve, 100));
+    start();
+  }, [capturedImage, rotation, applyRotation, stop, start]);
+
+  // Helper to load image from blob URL
+  const loadImage = (url: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = url;
+    });
+  };
+
+  // Submit all pages (including current one if any)
+  const handleConfirm = useCallback(async () => {
+    const allPages = [...pages];
+
+    // Include current captured image if exists
+    if (capturedImage) {
+      const blob = await applyRotation(capturedImage, rotation);
+      allPages.push({ url: capturedImage, blob, rotation });
     }
-  }, [capturedImage, rotation, onCapture, handleRetake, stop]);
+
+    if (allPages.length === 0) return;
+
+    const timestamp = Date.now();
+    let files: File[];
+
+    if (allPages.length === 1 && allPages[0]) {
+      // Single page - just use the image
+      const file = new File([allPages[0].blob], `capture-${timestamp}.jpg`, { type: 'image/jpeg' });
+      files = [file];
+    } else if (allPages.length > 1) {
+      // Multiple pages - combine into one tall image (stacked vertically)
+      // Load all images first
+      const loadedImages: HTMLImageElement[] = [];
+      for (const page of allPages) {
+        if (!page) continue;
+        const img = await loadImage(URL.createObjectURL(page.blob));
+        loadedImages.push(img);
+      }
+
+      if (loadedImages.length === 0) return;
+
+      // Find max width and total height
+      const maxWidth = Math.max(...loadedImages.map(img => img.width));
+      const totalHeight = loadedImages.reduce((sum, img) => sum + img.height, 0);
+      const gap = 20; // Gap between pages
+      const totalHeightWithGaps = totalHeight + (gap * (loadedImages.length - 1));
+
+      // Create combined canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = maxWidth;
+      canvas.height = totalHeightWithGaps;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) return;
+
+      // Fill with white background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw each image stacked vertically, centered horizontally
+      let yOffset = 0;
+      for (let i = 0; i < loadedImages.length; i++) {
+        const img = loadedImages[i];
+        if (!img) continue;
+        const xOffset = (maxWidth - img.width) / 2; // Center horizontally
+        ctx.drawImage(img, xOffset, yOffset);
+        yOffset += img.height + gap;
+
+        // Draw a subtle divider line between pages (except after last)
+        if (i < loadedImages.length - 1) {
+          ctx.strokeStyle = '#e0e0e0';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(20, yOffset - gap / 2);
+          ctx.lineTo(maxWidth - 20, yOffset - gap / 2);
+          ctx.stroke();
+        }
+      }
+
+      // Convert to blob
+      const combinedBlob = await new Promise<Blob>((resolve) => {
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+          },
+          'image/jpeg',
+          0.9
+        );
+      });
+
+      const file = new File([combinedBlob], `capture-${timestamp}-${allPages.length}pages.jpg`, { type: 'image/jpeg' });
+      files = [file];
+    } else {
+      // Shouldn't happen, but handle gracefully
+      return;
+    }
+
+    // Clean up URLs
+    allPages.forEach((page) => URL.revokeObjectURL(page.url));
+    setPages([]);
+    setCapturedImage(null);
+    setRotation(0);
+
+    onCapture(files);
+    stop();
+    onClose?.();
+  }, [pages, capturedImage, rotation, applyRotation, onCapture, stop, onClose]);
 
   const handleClose = useCallback(() => {
     stop();
     if (capturedImage) {
       URL.revokeObjectURL(capturedImage);
     }
+    pages.forEach((page) => URL.revokeObjectURL(page.url));
+    setPages([]);
     onClose?.();
-  }, [stop, capturedImage, onClose]);
+  }, [stop, capturedImage, pages, onClose]);
+
+  const totalPages = pages.length + (capturedImage ? 1 : 0);
 
   if (!hasCamera) {
     return (
@@ -169,6 +299,11 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         </Button>
         <span className="text-white font-medium">
           {capturedImage ? 'Preview' : 'Camera'}
+          {pages.length > 0 && (
+            <span className="ml-2 px-2 py-0.5 bg-green-500 rounded-full text-xs">
+              {pages.length} page{pages.length !== 1 ? 's' : ''} saved
+            </span>
+          )}
         </span>
         {isActive && !capturedImage && (
           <Button variant="ghost" size="sm" onClick={switchCamera} className="text-white">
@@ -291,16 +426,65 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         )}
       </div>
 
+      {/* Page thumbnails - show all pages including current capture */}
+      {totalPages > 0 && (
+        <div className="px-4 py-2 bg-black/70 flex gap-2 overflow-x-auto">
+          {pages.map((page, index) => (
+            <div key={index} className="relative flex-shrink-0">
+              <img
+                src={page.url}
+                alt={`Page ${index + 1}`}
+                className="h-12 w-12 object-cover rounded"
+                style={{ transform: `rotate(${page.rotation}deg)` }}
+              />
+              <span className="absolute -bottom-1 -left-1 bg-green-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+                {index + 1}
+              </span>
+              {/* Delete button */}
+              <button
+                onClick={() => handleRemovePage(index)}
+                className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {/* Show current captured image as thumbnail too */}
+          {capturedImage && (
+            <div className="relative flex-shrink-0 ring-2 ring-blue-500 rounded">
+              <img
+                src={capturedImage}
+                alt={`Page ${pages.length + 1}`}
+                className="h-12 w-12 object-cover rounded"
+                style={{ transform: `rotate(${rotation}deg)` }}
+              />
+              <span className="absolute -bottom-1 -left-1 bg-blue-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+                {pages.length + 1}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Controls */}
       <div className="p-4 bg-black/50">
         {capturedImage ? (
-          <div className="flex items-center justify-center gap-4">
-            <Button variant="outline" onClick={handleRetake} className="flex-1 max-w-32">
-              Retake
-            </Button>
-            <Button onClick={handleConfirm} className="flex-1 max-w-32">
-              Use Photo
-            </Button>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-center gap-3">
+              <Button variant="outline" onClick={handleRetake} className="flex-1 max-w-28">
+                Retake
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleAddPage}
+                className="flex-1 max-w-28 bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+              >
+                + Add Page
+              </Button>
+              <Button onClick={handleConfirm} className="flex-1 max-w-28 bg-green-600 hover:bg-green-700">
+                {totalPages > 1 ? `Done (${totalPages})` : 'Use Photo'}
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-center">

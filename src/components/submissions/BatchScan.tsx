@@ -1,34 +1,26 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useCamera } from '@/hooks/useCamera';
-import {
-  calculateFrameStability,
-  analyzeForDocument,
-} from '@/lib/utils/image-processing';
+
+interface CapturedPage {
+  url: string;
+  blob: Blob;
+  rotation: number;
+}
+
+interface UploadedAssignment {
+  id: string;
+  thumbnails: string[]; // URLs for display only
+  pageCount: number;
+}
 
 interface BatchScanProps {
   onCapture: (files: File[]) => Promise<void>;
   onClose: () => void;
 }
-
-interface CapturedImage {
-  id: string;
-  file: File;
-  preview: string;
-  timestamp: Date;
-}
-
-// Configuration for auto-capture
-const AUTO_CAPTURE_CONFIG = {
-  stabilityThreshold: 0.97, // How stable the image needs to be (0-1)
-  minStableFrames: 8, // Number of consecutive stable frames needed
-  captureDelay: 500, // Delay after stability detected before capture (ms)
-  cooldownAfterCapture: 1500, // Time to wait before next auto-capture (ms)
-  documentConfidenceThreshold: 0.6, // Minimum confidence that a document is in frame
-};
 
 export function BatchScan({ onCapture, onClose }: BatchScanProps) {
   const {
@@ -41,346 +33,252 @@ export function BatchScan({ onCapture, onClose }: BatchScanProps) {
     start,
     stop,
     capture,
+    switchCamera,
   } = useCamera({ facingMode: 'environment', width: 1920, height: 1080 });
 
-  const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
-  const [isAutoMode, setIsAutoMode] = useState(false);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [rotation, setRotation] = useState(0);
+  const [pages, setPages] = useState<CapturedPage[]>([]);
+  const [uploadedAssignments, setUploadedAssignments] = useState<UploadedAssignment[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [feedback, setFeedback] = useState('');
-  const [stability, setStability] = useState(0);
-  const [documentDetected, setDocumentDetected] = useState(false);
-
-  // Refs for auto-capture logic
-  const previousFrameRef = useRef<Uint8ClampedArray | null>(null);
-  const stableFrameCountRef = useRef(0);
-  const lastCaptureTimeRef = useRef(0);
-  const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
 
   // Initialize camera on mount
   useEffect(() => {
     start();
     return () => {
       stop();
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
     };
   }, [start, stop]);
 
-  // Create analysis canvas (smaller for performance)
-  useEffect(() => {
-    if (!analysisCanvasRef.current) {
-      analysisCanvasRef.current = document.createElement('canvas');
-      analysisCanvasRef.current.width = 320;
-      analysisCanvasRef.current.height = 240;
-    }
-  }, []);
-
-  // Auto-capture loop
-  useEffect(() => {
-    if (!isAutoMode || !isActive || !videoRef.current) {
-      return;
-    }
-
-    const analyzeFrame = () => {
-      if (!videoRef.current || !analysisCanvasRef.current) {
-        animationFrameRef.current = requestAnimationFrame(analyzeFrame);
-        return;
-      }
-
-      const video = videoRef.current;
-      const canvas = analysisCanvasRef.current;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-      if (!ctx || video.videoWidth === 0) {
-        animationFrameRef.current = requestAnimationFrame(analyzeFrame);
-        return;
-      }
-
-      // Draw scaled down frame for analysis
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const currentFrame = imageData.data;
-
-      // Analyze for document
-      const docAnalysis = analyzeForDocument(imageData);
-      setDocumentDetected(docAnalysis.isLikelyDocument);
-
-      // Calculate stability
-      if (previousFrameRef.current) {
-        const frameStability = calculateFrameStability(
-          previousFrameRef.current,
-          currentFrame,
-          5
-        );
-        setStability(frameStability);
-
-        // Check if stable enough and document detected
-        const now = Date.now();
-        const cooldownPassed =
-          now - lastCaptureTimeRef.current > AUTO_CAPTURE_CONFIG.cooldownAfterCapture;
-
-        if (
-          frameStability > AUTO_CAPTURE_CONFIG.stabilityThreshold &&
-          docAnalysis.confidence > AUTO_CAPTURE_CONFIG.documentConfidenceThreshold &&
-          cooldownPassed
-        ) {
-          stableFrameCountRef.current++;
-          setFeedback(`Hold steady... ${stableFrameCountRef.current}/${AUTO_CAPTURE_CONFIG.minStableFrames}`);
-
-          if (stableFrameCountRef.current >= AUTO_CAPTURE_CONFIG.minStableFrames) {
-            // Auto-capture!
-            setTimeout(() => {
-              handleCapture();
-              stableFrameCountRef.current = 0;
-              lastCaptureTimeRef.current = Date.now();
-              setFeedback('Captured! Move to next page...');
-            }, AUTO_CAPTURE_CONFIG.captureDelay);
-            stableFrameCountRef.current = 0;
-          }
-        } else {
-          stableFrameCountRef.current = 0;
-          if (!cooldownPassed) {
-            setFeedback('Move to next page...');
-          } else if (!docAnalysis.isLikelyDocument) {
-            setFeedback(docAnalysis.feedback);
-          } else if (frameStability <= AUTO_CAPTURE_CONFIG.stabilityThreshold) {
-            setFeedback('Hold camera steady...');
-          }
-        }
-      }
-
-      // Store current frame for next comparison
-      previousFrameRef.current = new Uint8ClampedArray(currentFrame);
-
-      animationFrameRef.current = requestAnimationFrame(analyzeFrame);
-    };
-
-    animationFrameRef.current = requestAnimationFrame(analyzeFrame);
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [isAutoMode, isActive, videoRef]);
-
   const handleCapture = useCallback(() => {
     const blob = capture();
-    if (!blob) return;
-
-    const id = `capture-${Date.now()}`;
-    const file = new File([blob], `${id}.jpg`, { type: 'image/jpeg' });
-    const preview = URL.createObjectURL(blob);
-
-    setCapturedImages((prev) => [
-      ...prev,
-      {
-        id,
-        file,
-        preview,
-        timestamp: new Date(),
-      },
-    ]);
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      setCapturedImage(url);
+    }
   }, [capture]);
 
-  const removeCapture = useCallback((id: string) => {
-    setCapturedImages((prev) => {
-      const item = prev.find((i) => i.id === id);
-      if (item) {
-        URL.revokeObjectURL(item.preview);
+  const handleRetake = useCallback(() => {
+    if (capturedImage) {
+      URL.revokeObjectURL(capturedImage);
+    }
+    setCapturedImage(null);
+    setRotation(0);
+  }, [capturedImage]);
+
+  const handleRotate = useCallback(() => {
+    setRotation((r) => (r + 90) % 360);
+  }, []);
+
+  // Helper to apply rotation to an image blob
+  const applyRotation = useCallback((imageUrl: string, rot: number): Promise<Blob> => {
+    return new Promise((resolve) => {
+      if (rot === 0) {
+        fetch(imageUrl)
+          .then((r) => r.blob())
+          .then(resolve);
+        return;
       }
-      return prev.filter((i) => i.id !== id);
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        if (rot === 90 || rot === 270) {
+          canvas.width = img.height;
+          canvas.height = img.width;
+        } else {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((rot * Math.PI) / 180);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+          },
+          'image/jpeg',
+          0.9
+        );
+      };
+      img.src = imageUrl;
     });
   }, []);
 
-  const clearAllCaptures = useCallback(() => {
-    capturedImages.forEach((img) => URL.revokeObjectURL(img.preview));
-    setCapturedImages([]);
-  }, [capturedImages]);
+  // Add current image as a page and continue capturing
+  const handleAddPage = useCallback(async () => {
+    if (!capturedImage) return;
 
-  const handleUpload = useCallback(async () => {
-    if (capturedImages.length === 0) return;
+    const blob = await applyRotation(capturedImage, rotation);
+    setPages((prev) => [...prev, { url: capturedImage, blob, rotation }]);
+    setCapturedImage(null);
+    setRotation(0);
+
+    // Force restart camera for next capture
+    stop();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    start();
+  }, [capturedImage, rotation, applyRotation, stop, start]);
+
+  // Helper to load image from blob URL
+  const loadImage = (url: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = url;
+    });
+  };
+
+  // Submit current assignment (all pages) and continue for next student
+  const handleUsePhoto = useCallback(async () => {
+    const allPages = [...pages];
+
+    // Include current captured image if exists
+    if (capturedImage) {
+      const blob = await applyRotation(capturedImage, rotation);
+      allPages.push({ url: capturedImage, blob, rotation });
+    }
+
+    if (allPages.length === 0) return;
 
     setUploading(true);
     try {
-      await onCapture(capturedImages.map((img) => img.file));
-      clearAllCaptures();
-      onClose();
+      const timestamp = Date.now();
+      let file: File;
+
+      if (allPages.length === 1 && allPages[0]) {
+        // Single page - just use the image
+        file = new File([allPages[0].blob], `capture-${timestamp}.jpg`, { type: 'image/jpeg' });
+      } else {
+        // Multiple pages - combine into one tall image (stacked vertically)
+        const loadedImages: HTMLImageElement[] = [];
+        for (const page of allPages) {
+          if (!page) continue;
+          const img = await loadImage(URL.createObjectURL(page.blob));
+          loadedImages.push(img);
+        }
+
+        if (loadedImages.length === 0) return;
+
+        // Find max width and total height
+        const maxWidth = Math.max(...loadedImages.map(img => img.width));
+        const totalHeight = loadedImages.reduce((sum, img) => sum + img.height, 0);
+        const gap = 20;
+        const totalHeightWithGaps = totalHeight + (gap * (loadedImages.length - 1));
+
+        // Create combined canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = maxWidth;
+        canvas.height = totalHeightWithGaps;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) return;
+
+        // Fill with white background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw each image stacked vertically, centered horizontally
+        let yOffset = 0;
+        for (let i = 0; i < loadedImages.length; i++) {
+          const img = loadedImages[i];
+          if (!img) continue;
+          const xOffset = (maxWidth - img.width) / 2;
+          ctx.drawImage(img, xOffset, yOffset);
+          yOffset += img.height + gap;
+
+          // Draw a subtle divider line between pages
+          if (i < loadedImages.length - 1) {
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(20, yOffset - gap / 2);
+            ctx.lineTo(maxWidth - 20, yOffset - gap / 2);
+            ctx.stroke();
+          }
+        }
+
+        // Convert to blob
+        const combinedBlob = await new Promise<Blob>((resolve) => {
+          canvas.toBlob(
+            (blob) => {
+              if (blob) resolve(blob);
+            },
+            'image/jpeg',
+            0.9
+          );
+        });
+
+        file = new File([combinedBlob], `capture-${timestamp}-${allPages.length}pages.jpg`, { type: 'image/jpeg' });
+      }
+
+      // Upload this assignment
+      await onCapture([file]);
+
+      // Save thumbnails for display (keep URLs for now, don't revoke)
+      const thumbnailUrls = allPages.map(page => page.url);
+      const newUploadedAssignments = [
+        ...uploadedAssignments,
+        {
+          id: `uploaded-${timestamp}`,
+          thumbnails: thumbnailUrls,
+          pageCount: allPages.length,
+        },
+      ];
+      setUploadedAssignments(newUploadedAssignments);
+
+      // Clear current pages (but URLs are kept in uploadedAssignments)
+      setPages([]);
+      setCapturedImage(null);
+      setRotation(0);
+
+      // Check if we've hit the limit of 5 assignments
+      if (newUploadedAssignments.length >= 5) {
+        // Auto-close after reaching limit
+        stop();
+        // Clean up URLs on close
+        newUploadedAssignments.forEach((a) => a.thumbnails.forEach((url) => URL.revokeObjectURL(url)));
+        onClose();
+        return;
+      }
+
+      // Restart camera for next student
+      stop();
+      await new Promise(resolve => setTimeout(resolve, 100));
+      start();
     } catch (err) {
       console.error('Upload error:', err);
-      alert('Failed to upload images. Please try again.');
+      alert('Failed to upload. Please try again.');
     } finally {
       setUploading(false);
     }
-  }, [capturedImages, onCapture, clearAllCaptures, onClose]);
+  }, [pages, capturedImage, rotation, applyRotation, onCapture, stop, start, uploadedAssignments, onClose]);
 
-  const toggleAutoMode = useCallback(() => {
-    setIsAutoMode((prev) => !prev);
-    setFeedback('');
-    stableFrameCountRef.current = 0;
-    previousFrameRef.current = null;
-  }, []);
+  const handleClose = useCallback(() => {
+    stop();
+    if (capturedImage) {
+      URL.revokeObjectURL(capturedImage);
+    }
+    pages.forEach((page) => URL.revokeObjectURL(page.url));
+    uploadedAssignments.forEach((a) => a.thumbnails.forEach((url) => URL.revokeObjectURL(url)));
+    setPages([]);
+    setUploadedAssignments([]);
+    onClose();
+  }, [stop, capturedImage, pages, uploadedAssignments, onClose]);
+
+  const totalPages = pages.length + (capturedImage ? 1 : 0);
 
   if (!hasCamera) {
     return (
-      <div className="fixed inset-0 z-50 bg-background flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardContent className="pt-6 text-center">
-            <p className="text-destructive mb-4">
-              {error || 'Camera not available on this device'}
-            </p>
-            <Button onClick={onClose}>Close</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      {/* Camera view */}
-      <div className="flex-1 relative overflow-hidden">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        <canvas ref={canvasRef} className="hidden" />
-
-        {/* Loading overlay */}
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-            <div className="text-white text-center">
-              <svg
-                className="h-8 w-8 animate-spin mx-auto mb-2"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              <p>Starting camera...</p>
-            </div>
-          </div>
-        )}
-
-        {/* Document alignment guide */}
-        <div className="absolute inset-4 pointer-events-none">
-          <div
-            className={`w-full h-full border-2 rounded-lg transition-colors ${
-              documentDetected
-                ? 'border-green-500'
-                : 'border-white/50'
-            }`}
-          />
-          {/* Corner indicators */}
-          <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-lg" />
-          <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-lg" />
-          <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-lg" />
-          <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-lg" />
-        </div>
-
-        {/* Status overlay */}
-        <div className="absolute top-4 left-4 right-4 flex justify-between items-start">
-          {/* Auto mode indicator */}
-          <div
-            className={`px-3 py-1.5 rounded-full text-sm font-medium ${
-              isAutoMode
-                ? 'bg-green-500 text-white'
-                : 'bg-white/20 text-white'
-            }`}
-          >
-            {isAutoMode ? 'AUTO' : 'MANUAL'}
-          </div>
-
-          {/* Capture count */}
-          <div className="bg-black/50 text-white px-3 py-1.5 rounded-full text-sm">
-            {capturedImages.length} captured
-          </div>
-        </div>
-
-        {/* Feedback */}
-        {isAutoMode && feedback && (
-          <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 text-center">
-            <div className="inline-block bg-black/70 text-white px-4 py-2 rounded-lg text-lg font-medium">
-              {feedback}
-            </div>
-          </div>
-        )}
-
-        {/* Stability indicator (auto mode) */}
-        {isAutoMode && (
-          <div className="absolute bottom-32 left-4 right-4">
-            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-              <div
-                className={`h-full transition-all duration-100 ${
-                  stability > AUTO_CAPTURE_CONFIG.stabilityThreshold
-                    ? 'bg-green-500'
-                    : 'bg-yellow-500'
-                }`}
-                style={{ width: `${stability * 100}%` }}
-              />
-            </div>
-            <p className="text-white/70 text-xs text-center mt-1">
-              Stability: {Math.round(stability * 100)}%
-            </p>
-          </div>
-        )}
-
-        {/* Captured thumbnails */}
-        {capturedImages.length > 0 && (
-          <div className="absolute bottom-24 left-4 right-4">
-            <div className="flex gap-2 overflow-x-auto py-2">
-              {capturedImages.map((img) => (
-                <div
-                  key={img.id}
-                  className="relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 border-white"
-                >
-                  <img
-                    src={img.preview}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                  <button
-                    onClick={() => removeCapture(img.id)}
-                    className="absolute top-0 right-0 bg-red-500 text-white w-5 h-5 flex items-center justify-center text-xs rounded-bl"
-                  >
-                    &times;
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Controls */}
-      <div className="bg-black p-4 safe-area-pb">
-        <div className="flex items-center justify-between gap-4 max-w-lg mx-auto">
-          {/* Close button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="text-white hover:bg-white/20"
-            disabled={uploading}
-          >
+      <Card>
+        <CardContent className="pt-6 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"
@@ -389,61 +287,136 @@ export function BatchScan({ onCapture, onClose }: BatchScanProps) {
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth="2"
-              className="h-6 w-6"
+              className="h-6 w-6 text-muted-foreground"
             >
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold">Camera Not Available</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            {error || 'Your device does not have a camera or camera access is not supported.'}
+          </p>
+          <Button variant="outline" onClick={onClose} className="mt-4">
+            Close
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Hidden canvas for capture */}
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 bg-black/50">
+        <Button variant="ghost" size="sm" onClick={handleClose} className="text-white">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            className="h-5 w-5"
+          >
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </Button>
+        <span className="text-white font-medium">
+          {capturedImage ? 'Preview' : 'Batch Scan'}
+          <span className="ml-2 px-2 py-0.5 bg-gray-600 rounded-full text-xs">
+            {uploadedAssignments.length}/5
+          </span>
+          {pages.length > 0 && (
+            <span className="ml-2 px-2 py-0.5 bg-blue-500 rounded-full text-xs">
+              {pages.length} page{pages.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </span>
+        {isActive && !capturedImage && (
+          <Button variant="ghost" size="sm" onClick={switchCamera} className="text-white">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              className="h-5 w-5"
+            >
+              <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+              <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+              <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+              <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <path d="M9 9h.01" />
+              <path d="M15 9h.01" />
             </svg>
           </Button>
+        )}
+        {capturedImage && (
+          <Button variant="ghost" size="sm" onClick={handleRotate} className="text-white">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              className="h-5 w-5"
+            >
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
+          </Button>
+        )}
+      </div>
 
-          {/* Capture button (manual mode) or Auto toggle */}
-          <div className="flex gap-2">
-            <Button
-              variant={isAutoMode ? 'outline' : 'default'}
-              size="lg"
-              onClick={isAutoMode ? toggleAutoMode : handleCapture}
-              disabled={!isActive || uploading}
-              className={`rounded-full w-16 h-16 ${
-                isAutoMode
-                  ? 'bg-white/20 border-white text-white'
-                  : 'bg-white hover:bg-white/90'
-              }`}
-            >
-              {isAutoMode ? (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  className="h-6 w-6"
-                >
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-              ) : (
-                <div className="w-10 h-10 rounded-full border-4 border-current" />
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleAutoMode}
-              disabled={uploading}
-              className="bg-white/10 border-white/50 text-white hover:bg-white/20"
-            >
-              {isAutoMode ? 'Manual' : 'Auto'}
-            </Button>
+      {/* Camera/Preview area */}
+      <div className="flex-1 relative overflow-hidden">
+        {capturedImage ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <img
+              src={capturedImage}
+              alt="Captured"
+              className="max-w-full max-h-full object-contain transition-transform"
+              style={{ transform: `rotate(${rotation}deg)` }}
+            />
           </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            {/* Alignment guide overlay */}
+            {isActive && (
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute inset-8 border-2 border-white/30 rounded-lg" />
+                <div className="absolute top-1/2 left-8 right-8 h-px bg-white/20" />
+                <div className="absolute left-1/2 top-8 bottom-8 w-px bg-white/20" />
+              </div>
+            )}
+          </>
+        )}
 
-          {/* Upload button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleUpload}
-            disabled={capturedImages.length === 0 || uploading}
-            className="text-white hover:bg-white/20"
-          >
-            {uploading ? (
+        {/* Loading overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <div className="flex flex-col items-center gap-2">
               <svg
-                className="h-6 w-6 animate-spin"
+                className="h-8 w-8 animate-spin text-white"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
@@ -462,29 +435,170 @@ export function BatchScan({ onCapture, onClose }: BatchScanProps) {
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 />
               </svg>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                className="h-6 w-6"
-              >
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
-            )}
-          </Button>
-        </div>
+              <span className="text-white text-sm">Starting camera...</span>
+            </div>
+          </div>
+        )}
 
-        {/* Action hint */}
-        <p className="text-white/60 text-xs text-center mt-2">
-          {isAutoMode
-            ? 'Hold camera steady over each page - auto-captures when stable'
-            : 'Tap capture button for each page, then upload all'}
-        </p>
+        {/* Error overlay */}
+        {error && !isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <div className="text-center p-4">
+              <p className="text-white mb-4">{error}</p>
+              <Button onClick={start}>Try Again</Button>
+            </div>
+          </div>
+        )}
+
+        {/* Start camera prompt */}
+        {!isActive && !isLoading && !error && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Button onClick={start} size="lg">
+              Start Camera
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Thumbnails - uploaded assignments and current pages */}
+      {(uploadedAssignments.length > 0 || totalPages > 0) && (
+        <div className="px-4 py-2 bg-black/70 flex gap-3 overflow-x-auto items-end">
+          {/* Uploaded assignments - grouped with green border */}
+          {uploadedAssignments.map((assignment, aIndex) => (
+            <div
+              key={assignment.id}
+              className="relative flex-shrink-0 flex gap-1 p-1 rounded-lg bg-green-900/50 border border-green-500"
+            >
+              {/* Delete button for group */}
+              <button
+                onClick={() => {
+                  // Revoke URLs and remove from state
+                  assignment.thumbnails.forEach((url) => URL.revokeObjectURL(url));
+                  setUploadedAssignments((prev) => prev.filter((a) => a.id !== assignment.id));
+                }}
+                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold z-10 shadow-md"
+              >
+                ×
+              </button>
+              {assignment.thumbnails.map((url, pIndex) => (
+                <div key={pIndex} className="relative">
+                  <img
+                    src={url}
+                    alt={`Assignment ${aIndex + 1}, Page ${pIndex + 1}`}
+                    className="h-10 w-10 object-cover rounded"
+                  />
+                  {pIndex === 0 && (
+                    <span className="absolute -top-1 -left-1 bg-green-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                      {aIndex + 1}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+
+          {/* Divider if both uploaded and current exist */}
+          {uploadedAssignments.length > 0 && totalPages > 0 && (
+            <div className="w-px h-12 bg-white/30 flex-shrink-0" />
+          )}
+
+          {/* Current assignment pages - blue styling */}
+          {totalPages > 0 && (
+            <div className="flex-shrink-0 flex gap-1 p-1 rounded-lg bg-blue-900/50 border border-blue-500">
+              {pages.map((page, index) => (
+                <div key={index} className="relative">
+                  <img
+                    src={page.url}
+                    alt={`Page ${index + 1}`}
+                    className="h-10 w-10 object-cover rounded"
+                    style={{ transform: `rotate(${page.rotation}deg)` }}
+                  />
+                  {index === 0 && (
+                    <span className="absolute -top-1 -left-1 bg-blue-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                      {uploadedAssignments.length + 1}
+                    </span>
+                  )}
+                </div>
+              ))}
+              {/* Current captured image */}
+              {capturedImage && (
+                <div className="relative ring-2 ring-white rounded">
+                  <img
+                    src={capturedImage}
+                    alt={`Page ${pages.length + 1}`}
+                    className="h-10 w-10 object-cover rounded"
+                    style={{ transform: `rotate(${rotation}deg)` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="p-4 bg-black/50">
+        {capturedImage ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-center gap-3">
+              <Button variant="outline" onClick={handleRetake} className="flex-1 max-w-28" disabled={uploading}>
+                Retake
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleAddPage}
+                className="flex-1 max-w-28 bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+                disabled={uploading}
+              >
+                + Add Page
+              </Button>
+              <Button
+                onClick={handleUsePhoto}
+                className="flex-1 max-w-28 bg-green-600 hover:bg-green-700"
+                disabled={uploading}
+              >
+                {uploading ? 'Uploading...' : totalPages > 1 ? `Use Photo (${totalPages})` : 'Use Photo'}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-6">
+            {/* Spacer for balance */}
+            <div className="w-14 h-14" />
+
+            {/* Capture button */}
+            <button
+              onClick={handleCapture}
+              disabled={!isActive || uploading}
+              className="w-16 h-16 rounded-full border-4 border-white bg-white/20 hover:bg-white/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              aria-label="Capture photo"
+            />
+
+            {/* Done button - only show when there are uploaded assignments */}
+            {uploadedAssignments.length > 0 ? (
+              <button
+                onClick={handleClose}
+                className="w-14 h-14 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-colors shadow-lg"
+                aria-label="Done - finish batch scan"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="3"
+                  className="h-7 w-7"
+                >
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              </button>
+            ) : (
+              <div className="w-14 h-14" />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

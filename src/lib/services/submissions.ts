@@ -4,6 +4,9 @@ import type { Submission, SubmissionInsert, SubmissionUpdate, SubmissionStatus }
 export interface SubmissionWithDetails extends Submission {
   student_name?: string;
   has_result?: boolean;
+  score?: number;
+  max_score?: number;
+  percentage?: number;
 }
 
 export interface SubmissionFilters {
@@ -23,7 +26,7 @@ export async function getSubmissions(filters: SubmissionFilters): Promise<Submis
     .select(`
       *,
       student:student_roster(name),
-      graded_results(id)
+      graded_results(id, score, max_score, percentage)
     `)
     .eq('project_id', filters.projectId)
     .order('created_at', { ascending: false });
@@ -43,11 +46,18 @@ export async function getSubmissions(filters: SubmissionFilters): Promise<Submis
     throw new Error('Failed to fetch submissions');
   }
 
-  return (data || []).map((sub: Record<string, unknown>) => ({
-    ...sub,
-    student_name: (sub.student as { name: string } | null)?.name,
-    has_result: Array.isArray(sub.graded_results) && sub.graded_results.length > 0,
-  })) as SubmissionWithDetails[];
+  return (data || []).map((sub: Record<string, unknown>) => {
+    const results = sub.graded_results as Array<{ id: string; score: number; max_score: number; percentage: number }> | null;
+    const latestResult = results && results.length > 0 ? results[0] : null;
+    return {
+      ...sub,
+      student_name: (sub.student as { name: string } | null)?.name,
+      has_result: !!latestResult,
+      score: latestResult?.score,
+      max_score: latestResult?.max_score,
+      percentage: latestResult?.percentage,
+    };
+  }) as SubmissionWithDetails[];
 }
 
 /**

@@ -84,6 +84,7 @@ export default function OnboardingPage() {
       .from('profiles')
       .upsert({
         id: user.id,
+        email: user.email,
         full_name: fullName.trim(),
         school_name: schoolName.trim(),
         grade_level: gradeLevel,
@@ -94,7 +95,7 @@ export default function OnboardingPage() {
       setError(upsertError.message);
       setLoading(false);
     } else {
-      router.push('/dashboard');
+      router.push('/assignments');
       router.refresh();
     }
   };

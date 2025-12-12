@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { createProject } from '@/lib/services/projects';
 
-export default function NewProjectPage() {
+export default function NewAssignmentPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export default function NewProjectPage() {
     e.preventDefault();
 
     if (!formData.name.trim()) {
-      setError('Project name is required');
+      setError('Assignment name is required');
       return;
     }
 
@@ -35,9 +35,9 @@ export default function NewProjectPage() {
         description: formData.description.trim() || null,
         date: formData.date,
       });
-      router.push(`/projects/${project.id}`);
+      router.push(`/assignments/${project.id}`);
     } catch (err) {
-      setError('Failed to create project');
+      setError('Failed to create assignment');
       console.error(err);
       setLoading(false);
     }
@@ -47,7 +47,7 @@ export default function NewProjectPage() {
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
         <Link
-          href="/projects"
+          href="/assignments"
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
         >
           <svg
@@ -63,23 +63,23 @@ export default function NewProjectPage() {
             <path d="m12 19-7-7 7-7" />
             <path d="M19 12H5" />
           </svg>
-          Back to Projects
+          Back to Assignments
         </Link>
-        <h1 className="text-3xl font-bold tracking-tight">Create Project</h1>
-        <p className="text-muted-foreground">Set up a new grading project</p>
+        <h1 className="text-3xl font-bold tracking-tight">Create Assignment</h1>
+        <p className="text-muted-foreground">Set up a new grading assignment</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Project Details</CardTitle>
+          <CardTitle>Assignment Details</CardTitle>
           <CardDescription>
-            Enter the basic information for your project
+            Enter the basic information for your assignment
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Project Name *</Label>
+              <Label htmlFor="name">Assignment Name *</Label>
               <Input
                 id="name"
                 placeholder="e.g., Chapter 5 Quiz, Weekly Math Practice"
@@ -148,10 +148,10 @@ export default function NewProjectPage() {
                     Creating...
                   </>
                 ) : (
-                  'Create Project'
+                  'Grade The Assignment'
                 )}
               </Button>
-              <Link href="/projects">
+              <Link href="/assignments">
                 <Button type="button" variant="outline" disabled={loading}>
                   Cancel
                 </Button>
@@ -165,7 +165,7 @@ export default function NewProjectPage() {
         <CardHeader>
           <CardTitle>What&apos;s Next?</CardTitle>
           <CardDescription>
-            After creating your project, you can:
+            After creating your assignment, you can:
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -185,7 +185,7 @@ export default function NewProjectPage() {
               2
             </div>
             <div>
-              <p className="font-medium">Upload student submissions</p>
+              <p className="font-medium">Upload student work</p>
               <p className="text-sm text-muted-foreground">
                 Scan or photograph student homework
               </p>
@@ -196,9 +196,9 @@ export default function NewProjectPage() {
               3
             </div>
             <div>
-              <p className="font-medium">Start grading</p>
+              <p className="font-medium">Click &quot;Start Grading&quot;</p>
               <p className="text-sm text-muted-foreground">
-                AI will grade submissions and group by student
+                AI handles the grading while you take a break
               </p>
             </div>
           </div>

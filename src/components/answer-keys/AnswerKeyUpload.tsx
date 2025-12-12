@@ -63,8 +63,8 @@ export function AnswerKeyUpload({ projectId, onUpload, onCancel }: AnswerKeyUplo
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      setError('File size must be less than 10MB');
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File size must be less than 5MB');
       return;
     }
 
@@ -82,6 +82,25 @@ export function AnswerKeyUpload({ projectId, onUpload, onCancel }: AnswerKeyUplo
         await uploadPdfAnswerKey(projectId, selectedFile);
       } else {
         await uploadImageAnswerKey(projectId, selectedFile);
+
+        // Automatically extract answers from the image using AI
+        try {
+          const extractResponse = await fetch('/api/answer-keys/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId }),
+          });
+
+          if (!extractResponse.ok) {
+            console.warn('Failed to extract answers from image, manual extraction may be needed');
+          } else {
+            const extractData = await extractResponse.json();
+            console.log('Extracted answers:', extractData);
+          }
+        } catch (extractErr) {
+          console.warn('Answer extraction failed:', extractErr);
+          // Continue anyway - upload succeeded, extraction is optional
+        }
       }
 
       onUpload?.();
@@ -223,7 +242,7 @@ export function AnswerKeyUpload({ projectId, onUpload, onCancel }: AnswerKeyUplo
               {dragActive ? 'Drop file here' : 'Drag and drop or click to upload'}
             </p>
             <p className="text-sm text-muted-foreground mt-1">
-              JPEG, PNG, WebP or PDF up to 10MB
+              JPEG, PNG, WebP or PDF up to 5MB
             </p>
           </div>
         )}

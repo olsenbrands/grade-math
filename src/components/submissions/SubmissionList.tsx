@@ -4,6 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   getSubmissions,
   getSubmissionUrl,
   deleteSubmission,
@@ -14,20 +22,52 @@ import {
 import { getStudents } from '@/lib/services/students';
 import type { Student, SubmissionStatus } from '@/types/database';
 
+export interface BatchGradingStatus {
+  currentId: string | null;
+  queueIds: string[];
+}
+
 interface SubmissionListProps {
   projectId: string;
   onRefresh?: () => void;
+  batchGradingStatus?: BatchGradingStatus;
 }
 
 const STATUS_LABELS: Record<SubmissionStatus, { label: string; color: string }> = {
-  pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800' },
-  processing: { label: 'Processing', color: 'bg-blue-100 text-blue-800' },
-  completed: { label: 'Completed', color: 'bg-green-100 text-green-800' },
-  needs_review: { label: 'Needs Review', color: 'bg-orange-100 text-orange-800' },
-  failed: { label: 'Failed', color: 'bg-red-100 text-red-800' },
+  pending: { label: 'Not Graded', color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200' },
+  processing: { label: 'Grading...', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
+  completed: { label: 'Graded', color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
+  needs_review: { label: 'Needs Review', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
+  failed: { label: 'Try Again', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' },
 };
 
-export function SubmissionList({ projectId, onRefresh }: SubmissionListProps) {
+interface QuestionDetail {
+  questionNumber: number;
+  problemText?: string;
+  aiCalculation?: string;
+  aiAnswer?: string;
+  studentAnswer: string | null;
+  correctAnswer: string;
+  answerKeyValue?: string | null;
+  isCorrect: boolean;
+  pointsAwarded: number;
+  pointsPossible: number;
+  confidence: number;
+  readabilityConfidence?: number;
+  readabilityIssue?: string | null;
+  discrepancy?: string | null;
+}
+
+interface GradingResultDetail {
+  questionsJson: QuestionDetail[];
+  needsReview: boolean;
+  reviewReason?: string;
+  provider: string;
+  model: string;
+  processingTimeMs: number;
+}
+
+export function SubmissionList({ projectId, onRefresh, batchGradingStatus }: SubmissionListProps) {
   const [submissions, setSubmissions] = useState<SubmissionWithDetails[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,8 +75,34 @@ export function SubmissionList({ projectId, onRefresh }: SubmissionListProps) {
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [assigning, setAssigning] = useState<string | null>(null);
+  const [grading, setGrading] = useState<string | null>(null);
+  const [gradingError, setGradingError] = useState<string | null>(null);
+  const [gradingResults, setGradingResults] = useState<Record<string, GradingResultDetail | null>>({});
+  const [loadingResult, setLoadingResult] = useState<string | null>(null);
+
+  // Fetch grading result details for a submission
+  const fetchGradingResult = useCallback(async (submissionId: string) => {
+    if (gradingResults[submissionId] !== undefined) return; // Already fetched or loading
+
+    try {
+      setLoadingResult(submissionId);
+      const response = await fetch(`/api/grading/submission/${submissionId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setGradingResults(prev => ({ ...prev, [submissionId]: data }));
+      } else {
+        setGradingResults(prev => ({ ...prev, [submissionId]: null }));
+      }
+    } catch {
+      setGradingResults(prev => ({ ...prev, [submissionId]: null }));
+    } finally {
+      setLoadingResult(null);
+    }
+  }, [gradingResults]);
 
   const loadData = useCallback(async () => {
     try {
@@ -53,7 +119,11 @@ export function SubmissionList({ projectId, onRefresh }: SubmissionListProps) {
         getStudents(),
       ]);
 
-      setSubmissions(subs);
+      // Sort: oldest first by created_at
+      const sortedSubs = [...subs].sort((a, b) => {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
+      setSubmissions(sortedSubs);
       setStudents(studentList);
 
       // Load image URLs for thumbnails
@@ -78,21 +148,42 @@ export function SubmissionList({ projectId, onRefresh }: SubmissionListProps) {
     loadData();
   }, [loadData]);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this submission?')) {
-      return;
-    }
+  const toggleSelectForDelete = (id: string) => {
+    setSelectedForDelete(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBatchDeleteConfirm = async () => {
+    if (selectedForDelete.size === 0) return;
 
     try {
-      setDeleting(id);
-      await deleteSubmission(id);
+      setDeleting(true);
+      setShowDeleteConfirm(false);
+
+      // Delete all selected submissions
+      const deletePromises = Array.from(selectedForDelete).map(id =>
+        deleteSubmission(id).catch(err => {
+          console.error(`Failed to delete ${id}:`, err);
+          return null;
+        })
+      );
+
+      await Promise.all(deletePromises);
+      setSelectedForDelete(new Set());
       await loadData();
       onRefresh?.();
     } catch (err) {
       console.error(err);
-      alert('Failed to delete submission');
+      alert('Failed to delete some submissions');
     } finally {
-      setDeleting(null);
+      setDeleting(false);
     }
   };
 
@@ -106,6 +197,30 @@ export function SubmissionList({ projectId, onRefresh }: SubmissionListProps) {
       alert('Failed to assign student');
     } finally {
       setAssigning(null);
+    }
+  };
+
+  const handleGrade = async (submissionId: string) => {
+    try {
+      setGrading(submissionId);
+      setGradingError(null);
+
+      const response = await fetch(`/api/grading/submission/${submissionId}`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Grading failed');
+      }
+
+      await loadData();
+      onRefresh?.();
+    } catch (err) {
+      console.error(err);
+      setGradingError(err instanceof Error ? err.message : 'Grading failed');
+    } finally {
+      setGrading(null);
     }
   };
 
@@ -134,9 +249,57 @@ export function SubmissionList({ projectId, onRefresh }: SubmissionListProps) {
 
   return (
     <div className="space-y-4">
-      {/* Filter */}
+      {/* Delete action bar - appears when items selected */}
+      {selectedForDelete.size > 0 && (
+        <div className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <span className="text-sm font-medium text-red-800 dark:text-red-200">
+            {selectedForDelete.size} {selectedForDelete.size === 1 ? 'item' : 'items'} selected
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedForDelete(new Set())}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <>
+                  <svg
+                    className="animate-spin -ml-1 mr-2 h-4 w-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1">
+                    <path d="M3 6h18" />
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                  </svg>
+                  Delete
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Filter - using teacher-friendly labels */}
       <div className="flex gap-2 flex-wrap">
-        {(['all', 'pending', 'processing', 'completed', 'needs_review', 'failed'] as const).map(
+        {(['all', 'pending', 'needs_review', 'completed'] as const).map(
           (status) => (
             <Button
               key={status}
@@ -144,7 +307,7 @@ export function SubmissionList({ projectId, onRefresh }: SubmissionListProps) {
               size="sm"
               onClick={() => setStatusFilter(status)}
             >
-              {status === 'all' ? 'All' : STATUS_LABELS[status].label}
+              {status === 'all' ? 'All Papers' : STATUS_LABELS[status].label}
             </Button>
           )
         )}
@@ -169,166 +332,448 @@ export function SubmissionList({ projectId, onRefresh }: SubmissionListProps) {
                 <polyline points="14,2 14,8 20,8" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold">No submissions</h3>
+            <h3 className="text-lg font-semibold">No student work yet</h3>
             <p className="text-sm text-muted-foreground mt-1">
               {statusFilter === 'all'
-                ? 'Upload student homework to get started'
-                : `No submissions with status "${STATUS_LABELS[statusFilter].label}"`}
+                ? 'Upload student papers to get started'
+                : `No papers with status "${STATUS_LABELS[statusFilter].label}"`}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-2">
           {submissions.map((submission) => (
-            <div
-              key={submission.id}
-              className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                selectedId === submission.id
-                  ? 'border-primary bg-primary/5'
-                  : 'hover:bg-muted/50'
-              }`}
-              onClick={() => setSelectedId(selectedId === submission.id ? null : submission.id)}
-            >
-              {/* Thumbnail */}
-              <div className="w-16 h-16 rounded overflow-hidden bg-muted flex-shrink-0">
-                {imageUrls[submission.id] ? (
-                  <img
-                    src={imageUrls[submission.id]}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      className="h-6 w-6 text-muted-foreground"
-                    >
-                      <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-                      <circle cx="9" cy="9" r="2" />
-                      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+            <div key={submission.id}>
+              {/* Submission Card */}
+              <div
+                className={`relative flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                  selectedId === submission.id
+                    ? 'border-primary bg-primary/5'
+                    : 'hover:bg-muted/50'
+                } ${batchGradingStatus?.currentId === submission.id ? 'ring-2 ring-primary' : ''} ${
+                  selectedForDelete.has(submission.id) ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800' : ''
+                }`}
+                onClick={() => {
+                  const newSelected = selectedId === submission.id ? null : submission.id;
+                  setSelectedId(newSelected);
+                  if (newSelected && submission.has_result) {
+                    fetchGradingResult(newSelected);
+                  }
+                }}
+              >
+                {/* Checkbox for batch delete */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSelectForDelete(submission.id);
+                  }}
+                  className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                    selectedForDelete.has(submission.id)
+                      ? 'bg-red-500 border-red-500 text-white'
+                      : 'border-gray-300 dark:border-gray-600 hover:border-red-400'
+                  }`}
+                >
+                  {selectedForDelete.has(submission.id) && (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                      <polyline points="20 6 9 17 4 12" />
                     </svg>
+                  )}
+                </button>
+
+                {/* Thumbnail */}
+                <div className="w-16 h-16 rounded overflow-hidden bg-muted flex-shrink-0">
+                  {imageUrls[submission.id] ? (
+                    <img
+                      src={imageUrls[submission.id]}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        className="h-6 w-6 text-muted-foreground"
+                      >
+                        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                        <circle cx="9" cy="9" r="2" />
+                        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+
+                {/* Batch Grading Status Overlay */}
+                {batchGradingStatus?.currentId === submission.id && (
+                  <div className="absolute inset-0 bg-primary/10 rounded-lg flex items-center justify-center z-10">
+                    <div className="bg-white dark:bg-gray-900 rounded-full p-2 shadow-lg">
+                      <svg
+                        className="animate-spin h-6 w-6 text-primary"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                    </div>
                   </div>
                 )}
-              </div>
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium truncate">
-                    {submission.student_name ||
-                      submission.detected_name ||
-                      submission.original_filename ||
-                      'Unknown'}
+                {/* Info */}
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium truncate">
+                      {submission.student_name ||
+                        submission.detected_name ||
+                        submission.original_filename ||
+                        'Unknown'}
+                    </p>
+                    {/* Queue indicator */}
+                    {batchGradingStatus?.queueIds.includes(submission.id) && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-3 w-3"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                        In Queue
+                      </span>
+                    )}
+                    {/* Currently grading indicator */}
+                    {batchGradingStatus?.currentId === submission.id && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-primary text-primary-foreground">
+                        <svg
+                          className="animate-spin h-3 w-3"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                        Grading
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(submission.created_at).toLocaleString()}
+                    {submission.page_number > 1 && ` - Page ${submission.page_number}`}
                   </p>
+                </div>
+
+                {/* Status Badge & Score */}
+                <div className="flex-shrink-0 flex items-center gap-3">
                   <span
-                    className={`px-2 py-0.5 text-xs rounded-full ${
+                    className={`px-2 py-0.5 text-xs rounded-full whitespace-nowrap ${
                       STATUS_LABELS[submission.status].color
                     }`}
                   >
                     {STATUS_LABELS[submission.status].label}
                   </span>
+                  {submission.has_result && submission.percentage !== undefined && (
+                    <div className="text-right">
+                      <div className={`text-lg font-bold ${
+                        submission.percentage >= 90 ? 'text-green-600' :
+                        submission.percentage >= 70 ? 'text-yellow-600' :
+                        'text-red-600'
+                      }`}>
+                        {Math.round(submission.percentage)}%
+                      </div>
+                      {submission.score !== undefined && submission.max_score !== undefined && (
+                        <div className="text-xs text-muted-foreground">
+                          {submission.score}/{submission.max_score}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {submission.original_filename}
-                  {submission.page_number > 1 && ` (Page ${submission.page_number})`}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {new Date(submission.created_at).toLocaleString()}
-                </p>
               </div>
 
-              {/* Actions */}
-              <div className="flex-shrink-0 flex items-center gap-2">
-                {submission.has_result && (
-                  <span className="text-xs text-green-600 font-medium">Graded</span>
-                )}
-              </div>
+              {/* Detail panel - appears directly below selected submission */}
+              {selectedId === submission.id && (
+                <Card className="mt-2 ml-4 border-l-4 border-l-primary">
+                  <CardContent className="pt-4">
+                    <div className="space-y-4">
+                      {/* Image preview */}
+                      {imageUrls[submission.id] && (
+                        <div className="aspect-video bg-muted rounded-lg overflow-hidden max-w-2xl">
+                          <img
+                            src={imageUrls[submission.id]}
+                            alt="Submission"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                      )}
+
+                      {/* Question Breakdown - Teacher-first language */}
+                      {submission.has_result && (
+                        <div className="space-y-3">
+                          <h4 className="font-semibold text-sm border-b pb-2">
+                            Question by Question
+                            {loadingResult === submission.id && (
+                              <span className="ml-2 text-muted-foreground font-normal">Loading...</span>
+                            )}
+                          </h4>
+
+                          {gradingResults[submission.id]?.questionsJson ? (
+                            <div className="space-y-3">
+                              {gradingResults[submission.id]!.questionsJson.map((q) => (
+                                <div
+                                  key={q.questionNumber}
+                                  className={`p-3 rounded-lg border ${
+                                    q.isCorrect
+                                      ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'
+                                      : q.studentAnswer === null
+                                        ? 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800'
+                                        : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 space-y-2">
+                                      {/* Problem */}
+                                      <div className="font-medium">
+                                        Q{q.questionNumber}: {q.problemText || 'Problem not detected'}
+                                      </div>
+
+                                      {/* Student's Answer */}
+                                      <div className="text-sm">
+                                        <span className="text-muted-foreground">Student&apos;s answer: </span>
+                                        <span className={`font-semibold ${
+                                          q.studentAnswer === null
+                                            ? 'text-yellow-700 dark:text-yellow-400'
+                                            : q.isCorrect
+                                              ? 'text-green-700 dark:text-green-400'
+                                              : 'text-red-700 dark:text-red-400'
+                                        }`}>
+                                          {q.studentAnswer ?? '(blank)'}
+                                        </span>
+                                        {q.isCorrect && ' \u2713'}
+                                      </div>
+
+                                      {/* Correct Answer - only show if wrong */}
+                                      {!q.isCorrect && (
+                                        <div className="text-sm">
+                                          <span className="text-muted-foreground">Correct answer: </span>
+                                          <span className="font-semibold">
+                                            {q.answerKeyValue || q.aiAnswer || q.correctAnswer}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Note for teacher - only if flagged */}
+                                      {(q.readabilityIssue || q.discrepancy || (q.readabilityConfidence !== undefined && q.readabilityConfidence < 0.7)) && (
+                                        <div className="text-xs text-yellow-700 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30 px-2 py-1 rounded">
+                                          {q.readabilityIssue
+                                            ? `Handwriting unclear - ${q.readabilityIssue}`
+                                            : q.discrepancy
+                                              ? `Note: ${q.discrepancy}`
+                                              : 'AI wasn\'t sure about this answer - please verify'}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Points */}
+                                    <div className="text-right">
+                                      <div className={`text-lg font-bold ${
+                                        q.isCorrect ? 'text-green-600' : q.studentAnswer === null ? 'text-yellow-600' : 'text-red-600'
+                                      }`}>
+                                        {q.pointsAwarded}/{q.pointsPossible}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+
+                              {/* Review Reason - Teacher-friendly */}
+                              {gradingResults[submission.id]!.reviewReason && (
+                                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                                  <div className="flex items-start gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5">
+                                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                                      <line x1="12" y1="9" x2="12" y2="13"/>
+                                      <line x1="12" y1="17" x2="12.01" y2="17"/>
+                                    </svg>
+                                    <div>
+                                      <p className="font-medium text-yellow-800 dark:text-yellow-200">Please review this paper</p>
+                                      <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                                        {gradingResults[submission.id]!.reviewReason}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : loadingResult !== submission.id && (
+                            <p className="text-sm text-muted-foreground">
+                              Click to see grading details...
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Student assignment */}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Assign to Student</label>
+                        <select
+                          className="w-full max-w-xs p-2 border rounded-md"
+                          value={submission.student_id || ''}
+                          onChange={(e) =>
+                            handleAssign(submission.id, e.target.value || null)
+                          }
+                          disabled={assigning === submission.id}
+                        >
+                          <option value="">-- Select Student --</option>
+                          {students.map((student) => (
+                            <option key={student.id} value={student.id}>
+                              {student.name}
+                            </option>
+                          ))}
+                        </select>
+                        {submission.detected_name && (
+                          <p className="text-xs text-muted-foreground">
+                            Detected name: {submission.detected_name}
+                            {submission.name_confidence && (
+                              <> ({Math.round(submission.name_confidence * 100)}% confident)</>
+                            )}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Grading Error */}
+                      {gradingError && (
+                        <div className="p-3 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded-md">
+                          {gradingError}
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex gap-2 flex-wrap">
+                        {(submission.status === 'pending' || submission.status === 'failed') && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleGrade(submission.id)}
+                            disabled={grading === submission.id}
+                          >
+                            {grading === submission.id ? (
+                              <>
+                                <svg
+                                  className="animate-spin -ml-1 mr-2 h-4 w-4"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  />
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                  />
+                                </svg>
+                                Grading...
+                              </>
+                            ) : (
+                              'Grade Now'
+                            )}
+                          </Button>
+                        )}
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedForDelete(new Set([submission.id]));
+                            setShowDeleteConfirm(true);
+                          }}
+                          disabled={deleting}
+                        >
+                          Delete
+                        </Button>
+                        {imageUrls[submission.id] && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(imageUrls[submission.id], '_blank')}
+                          >
+                            View Full Size
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {/* Detail panel */}
-      {selectedId && (
-        <Card>
-          <CardContent className="pt-6">
-            {(() => {
-              const selected = submissions.find((s) => s.id === selectedId);
-              if (!selected) return null;
-
-              return (
-                <div className="space-y-4">
-                  {/* Image preview */}
-                  {imageUrls[selectedId] && (
-                    <div className="aspect-video bg-muted rounded-lg overflow-hidden">
-                      <img
-                        src={imageUrls[selectedId]}
-                        alt="Submission"
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                  )}
-
-                  {/* Student assignment */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Assign to Student</label>
-                    <select
-                      className="w-full p-2 border rounded-md"
-                      value={selected.student_id || ''}
-                      onChange={(e) =>
-                        handleAssign(selectedId, e.target.value || null)
-                      }
-                      disabled={assigning === selectedId}
-                    >
-                      <option value="">-- Select Student --</option>
-                      {students.map((student) => (
-                        <option key={student.id} value={student.id}>
-                          {student.name}
-                        </option>
-                      ))}
-                    </select>
-                    {selected.detected_name && (
-                      <p className="text-xs text-muted-foreground">
-                        Detected name: {selected.detected_name}
-                        {selected.name_confidence && (
-                          <> ({Math.round(selected.name_confidence * 100)}% confident)</>
-                        )}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-2">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDelete(selectedId)}
-                      disabled={deleting === selectedId}
-                    >
-                      {deleting === selectedId ? 'Deleting...' : 'Delete'}
-                    </Button>
-                    {imageUrls[selectedId] && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => window.open(imageUrls[selectedId], '_blank')}
-                      >
-                        View Full Size
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          </CardContent>
-        </Card>
-      )}
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={(open) => !open && setShowDeleteConfirm(false)}>
+        <DialogContent showCloseButton={false} className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete {selectedForDelete.size === 1 ? 'Submission' : 'Submissions'}</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedForDelete.size === 1 ? 'this submission' : `${selectedForDelete.size} submissions`}? This can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteConfirm(false)}
+            >
+              No
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBatchDeleteConfirm}
+            >
+              Yes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

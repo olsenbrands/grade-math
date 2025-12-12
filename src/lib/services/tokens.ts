@@ -43,17 +43,38 @@ export async function getTokenBalance(): Promise<number> {
     throw new Error('Not authenticated');
   }
 
-  // Call the database function
-  const { data, error } = await supabase.rpc('get_token_balance', {
-    p_user_id: user.id,
-  });
+  // Calculate balance from token_ledger transactions
+  const { data, error } = await supabase
+    .from('token_ledger')
+    .select('amount')
+    .eq('user_id', user.id);
 
   if (error) {
     console.error('Error fetching token balance:', error);
     throw new Error('Failed to fetch token balance');
   }
 
-  return data || 0;
+  // If no transactions exist, create signup bonus
+  if (!data || data.length === 0) {
+    const { error: insertError } = await supabase
+      .from('token_ledger')
+      .insert({
+        user_id: user.id,
+        amount: 100,
+        balance_after: 100,
+        operation: 'signup_bonus',
+        notes: 'Welcome bonus for new account',
+      });
+
+    if (insertError) {
+      console.error('Error creating signup bonus:', insertError);
+    }
+    return 100;
+  }
+
+  // Sum all transactions
+  const balance = data.reduce((sum, row) => sum + (row.amount || 0), 0);
+  return balance;
 }
 
 /**
@@ -274,17 +295,17 @@ export async function adminGrantTokens(
 ): Promise<TransactionResult> {
   const supabase = createClient();
 
-  // Get target user's current balance
-  const { data: balanceData, error: balanceError } = await supabase.rpc(
-    'get_token_balance',
-    { p_user_id: targetUserId }
-  );
+  // Get target user's current balance from token_ledger
+  const { data: transactions, error: balanceError } = await supabase
+    .from('token_ledger')
+    .select('amount')
+    .eq('user_id', targetUserId);
 
   if (balanceError) {
     return { success: false, newBalance: 0, error: 'Failed to get user balance' };
   }
 
-  const currentBalance = balanceData || 0;
+  const currentBalance = transactions?.reduce((sum, row) => sum + (row.amount || 0), 0) || 0;
   const newBalance = currentBalance + amount;
 
   // Insert transaction

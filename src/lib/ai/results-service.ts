@@ -45,9 +45,9 @@ export async function saveGradingResult(
       submission_id: result.submissionId,
       project_id: projectId,
       student_id: studentId || null,
-      total_score: result.totalScore,
-      total_possible: result.totalPossible,
-      percentage: result.percentage,
+      score: result.totalScore,
+      max_score: result.totalPossible,
+      // percentage is a generated column, don't insert it
       questions_json: result.questions,
       detected_name: result.detectedStudentName || null,
       name_confidence: result.nameConfidence || null,

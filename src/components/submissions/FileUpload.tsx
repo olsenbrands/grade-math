@@ -16,6 +16,7 @@ interface FileUploadProps {
   onClose?: () => void;
   maxFiles?: number;
   maxSizeMB?: number;
+  maxTotalSizeMB?: number;
 }
 
 interface FileWithPreview {
@@ -40,7 +41,8 @@ export function FileUpload({
   onUpload,
   onClose,
   maxFiles = 50,
-  maxSizeMB = 10,
+  maxSizeMB = 5,
+  maxTotalSizeMB = 25,
 }: FileUploadProps) {
   const [files, setFiles] = useState<FileWithPreview[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -49,6 +51,11 @@ export function FileUpload({
   const [processingMessage, setProcessingMessage] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Calculate current total size
+  const totalSizeBytes = files.reduce((sum, f) => sum + f.file.size, 0);
+  const totalSizeMB = totalSizeBytes / 1024 / 1024;
+  const remainingSizeMB = maxTotalSizeMB - totalSizeMB;
 
   const validateFile = useCallback((file: File): string | null => {
     // Check by MIME type or extension for HEIC
@@ -71,7 +78,32 @@ export function FileUpload({
       return;
     }
 
-    const toAdd = fileArray.slice(0, remaining);
+    // Check total size limit
+    const currentTotalBytes = files.reduce((sum, f) => sum + f.file.size, 0);
+    const maxTotalBytes = maxTotalSizeMB * 1024 * 1024;
+
+    // Filter files that would fit within total limit
+    let availableBytes = maxTotalBytes - currentTotalBytes;
+    const toAdd: File[] = [];
+    let skippedForSize = 0;
+
+    for (const file of fileArray.slice(0, remaining)) {
+      if (file.size <= availableBytes) {
+        toAdd.push(file);
+        availableBytes -= file.size;
+      } else {
+        skippedForSize++;
+      }
+    }
+
+    if (skippedForSize > 0 && toAdd.length === 0) {
+      alert(`Cannot add files: Would exceed ${maxTotalSizeMB}MB total limit`);
+      return;
+    } else if (skippedForSize > 0) {
+      alert(`${skippedForSize} file(s) skipped: Would exceed ${maxTotalSizeMB}MB total limit`);
+    }
+
+    if (toAdd.length === 0) return;
 
     // Check for PDFs or HEIC files that need processing
     const needsProcessing = toAdd.some((f) => isPdfFile(f) || isHeicFile(f));
@@ -130,7 +162,7 @@ export function FileUpload({
 
       setFiles((prev) => [...prev, ...newFileItems]);
     }
-  }, [files.length, maxFiles, validateFile]);
+  }, [files, maxFiles, maxTotalSizeMB, validateFile]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -275,7 +307,7 @@ export function FileUpload({
             {dragActive ? 'Drop files here' : 'Drag and drop files here'}
           </p>
           <p className="text-sm text-muted-foreground mt-1">
-            or click to select files (max {maxFiles} files, {maxSizeMB}MB each)
+            or click to select files ({maxSizeMB}MB per file, {maxTotalSizeMB}MB total)
           </p>
           <p className="text-xs text-muted-foreground mt-2">
             Supports: JPEG, PNG, WebP, HEIC, PDF (multi-page PDFs auto-split)
@@ -315,9 +347,26 @@ export function FileUpload({
         {files.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">
-                {files.length} file{files.length !== 1 ? 's' : ''} selected
-              </span>
+              <div className="space-y-1">
+                <span className="text-sm font-medium">
+                  {files.length} file{files.length !== 1 ? 's' : ''} selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-24 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all ${
+                        totalSizeMB > maxTotalSizeMB * 0.9 ? 'bg-red-500' :
+                        totalSizeMB > maxTotalSizeMB * 0.7 ? 'bg-yellow-500' :
+                        'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min(100, (totalSizeMB / maxTotalSizeMB) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {totalSizeMB.toFixed(1)} / {maxTotalSizeMB}MB
+                  </span>
+                </div>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"

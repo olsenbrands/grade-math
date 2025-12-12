@@ -65,14 +65,21 @@ export interface GradingOptions {
 // Individual question result
 export interface QuestionResult {
   questionNumber: number;
+  problemText?: string; // The math problem as written
+  aiCalculation?: string; // AI's step-by-step calculation
+  aiAnswer?: string; // AI's calculated answer
   studentAnswer: string | null;
-  correctAnswer: string;
+  correctAnswer: string; // Final correct answer (AI answer or answer key)
+  answerKeyValue?: string | null; // What the answer key says (if provided)
   isCorrect: boolean;
   pointsAwarded: number;
   pointsPossible: number;
-  confidence: number; // 0-1
+  confidence: number; // 0-1 grading confidence
+  readabilityConfidence?: number; // 0-1 how clearly the handwriting was read
+  readabilityIssue?: string | null; // Description of reading difficulties
   feedback?: string;
   partialCredit?: boolean;
+  discrepancy?: string | null; // If AI answer differs from answer key
 }
 
 // Overall grading result

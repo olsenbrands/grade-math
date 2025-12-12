@@ -38,7 +38,7 @@
 
 ### 2.1 Supabase Auth Setup
 - [x] Configure email/password auth
-- [ ] Configure Google OAuth provider (pending: needs Google Cloud credentials)
+- [x] Configure Google OAuth provider
 - [x] Set up auth callback route
 - [x] Implement auth middleware
 

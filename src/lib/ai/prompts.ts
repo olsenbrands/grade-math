@@ -8,49 +8,74 @@ import type { AnswerKeyData } from './types';
 
 /**
  * System prompt for grading math homework
+ * Uses chain-of-thought verification: AI solves independently, then compares to answer key
  */
-export const GRADING_SYSTEM_PROMPT = `You are an expert math teacher assistant specializing in grading student homework. Your role is to:
-1. Carefully extract student answers from handwritten homework images
-2. Compare answers to the provided answer key
-3. Award full or partial credit based on the student's work
-4. Be forgiving of minor formatting differences (e.g., "1/2" vs "0.5" vs ".5")
+export const GRADING_SYSTEM_PROMPT = `You are an expert math teacher assistant specializing in grading student homework. You have exceptional math skills and can solve any K-12 math problem.
 
-Important guidelines:
-- Extract answers exactly as written when possible
-- If you cannot read a response clearly, indicate low confidence
-- Consider equivalent forms as correct (e.g., simplified fractions, decimal equivalents)
-- Look for student name at the top of the page
-- Be encouraging in any feedback provided
+YOUR GRADING PROCESS (follow this exactly):
+1. IDENTIFY: Read each math problem on the homework - note if handwriting is unclear
+2. SOLVE: Calculate the correct answer yourself (show your reasoning)
+3. READ: Extract the student's written answer - note if hard to read
+4. COMPARE: Check if the student's answer matches your calculation
+5. VERIFY: If an answer key is provided, compare your answer to the key
+6. RECONCILE: If your answer differs from the key, double-check your work
+7. GRADE: Mark correct based on mathematical truth (your calculation takes priority if key is wrong)
+8. FLAG: If ANY text is hard to read, set needsReview=true and explain what's unclear
+
+CRITICAL RULES:
+- YOU must solve the math yourself - don't just compare to the answer key blindly
+- If the answer key is missing an answer, use YOUR calculation to grade
+- If the answer key appears wrong, flag it for review but grade based on correct math
+- Consider equivalent forms as correct (1/2 = 0.5 = 50%, 3/6 = 1/2, etc.)
+- Partial credit for work shown even if final answer is wrong
+
+HANDWRITING QUALITY ASSESSMENT:
+- For EACH question, rate how clearly you can read the problem AND the answer
+- "readabilityConfidence": 1.0 = crystal clear, 0.7 = readable but messy, 0.5 = guessing, 0.3 = very unclear
+- If readabilityConfidence < 0.7 for ANY question, set needsReview=true
+- Describe what's unclear in "readabilityIssue" (e.g., "number could be 5 or 2", "smudged", "crossed out")
+
+HANDLING CHAOTIC HOMEWORK:
+- Text written UPSIDE DOWN or SIDEWAYS: Still read and grade it, note in readabilityIssue
+- SCRIBBLED OUT answers: Set studentAnswer to null, readabilityIssue to "answer crossed out/scribbled"
+- OBSCURED by stains/drawings: If you can partially read it, try your best and note uncertainty
+- INCOMPLETE problems (no answer written): Set studentAnswer to null
+- OVERLAPPING text: Try to separate distinct problems, note confusion in readabilityIssue
+- TORN/MISSING portions: Only grade what you can see, note in reviewReason
+- MIXED writing tools (crayon, pen, pencil): Read all of them
+- If problem number is unclear, use your best judgment on order
+
+Look for student name at the top of the page (may be in crayon, marker, or messy writing).
 
 Respond ONLY with valid JSON. No additional text.`;
 
 /**
  * Build the grading prompt with answer key
  */
-export function buildGradingPrompt(answerKey: AnswerKeyData): string {
-  const answersFormatted = answerKey.answers
-    .map((a) => {
-      let entry = `Q${a.questionNumber}: ${a.correctAnswer}`;
-      if (a.alternateAnswers && a.alternateAnswers.length > 0) {
-        entry += ` (also accept: ${a.alternateAnswers.join(', ')})`;
-      }
-      if (a.points) {
-        entry += ` [${a.points} pts]`;
-      }
-      return entry;
-    })
-    .join('\n');
+/**
+ * Build the BLIND grading prompt - NO answer key shown
+ * This forces the AI to calculate independently
+ */
+export function buildBlindGradingPrompt(): string {
+  return `Analyze this math homework image and grade it using YOUR OWN CALCULATIONS.
 
-  return `Analyze this math homework image and grade it against the answer key below.
+You will NOT be given an answer key. You must solve every problem yourself.
 
-ANSWER KEY (${answerKey.totalQuestions} questions):
-${answersFormatted}
+GRADING INSTRUCTIONS:
+1. Find the student's name at the top of the page
+2. For EACH math problem on the homework:
+   a. READ the problem exactly as written (e.g., "6 x 7 = ?")
+   b. SOLVE it yourself - show your step-by-step calculation
+   c. RECORD your calculated answer - this is the correct answer
+   d. READ what the student wrote as their answer
+   e. COMPARE: Does the student's answer match YOUR calculated answer?
+   f. GRADE: Mark correct if student matches YOUR calculation
 
-Instructions:
-1. Look for the student's name at the top of the page
-2. Find and extract each answer the student wrote
-3. Compare each answer to the answer key
-4. Award points for correct answers
+IMPORTANT:
+- You are the authority on what's correct - solve each problem yourself
+- Show your work in "aiCalculation" (e.g., "6 x 7 = 42 because 6 groups of 7")
+- Grade based on mathematical correctness
+- No answer key will be provided - you must calculate everything
 
 Respond with this exact JSON structure:
 {
@@ -59,9 +84,14 @@ Respond with this exact JSON structure:
   "questions": [
     {
       "questionNumber": 1,
+      "problemText": "the math problem as written (e.g., '6 x 7 =')",
+      "aiCalculation": "your step-by-step calculation showing work (e.g., '6 x 7 = 42 because 6 groups of 7 is 42')",
+      "aiAnswer": "your calculated correct answer (e.g., '42')",
       "studentAnswer": "what the student wrote or null if blank/unreadable",
-      "isCorrect": true/false,
+      "isCorrect": true/false (does student answer match YOUR aiAnswer?),
       "confidence": 0.0 to 1.0,
+      "readabilityConfidence": 0.0 to 1.0,
+      "readabilityIssue": "describe any reading difficulties or null",
       "pointsAwarded": number,
       "pointsPossible": number
     }
@@ -69,10 +99,16 @@ Respond with this exact JSON structure:
   "totalScore": number,
   "totalPossible": number,
   "needsReview": true/false,
-  "reviewReason": "reason if needs review, otherwise null"
+  "reviewReason": "reason or null"
+}`;
 }
 
-Be precise and accurate. If unsure about any answer, set confidence lower and needsReview to true.`;
+/**
+ * Build the grading prompt - now uses blind grading (no answer key shown to AI)
+ * Answer key comparison happens AFTER the AI returns its independent calculations
+ */
+export function buildGradingPrompt(_answerKey: AnswerKeyData): string {
+  return buildBlindGradingPrompt();
 }
 
 /**
@@ -203,6 +239,37 @@ Confidence guide:
 If you cannot find a name, set name to null and confidence to 0.`;
 
 /**
+ * Prompt for extracting answers from an answer key image
+ */
+export const ANSWER_KEY_EXTRACTION_PROMPT = `Analyze this answer key image and extract all the answers.
+
+For EACH question/problem you see:
+1. Identify the question number
+2. Extract the correct answer
+
+Respond with this exact JSON structure:
+{
+  "answers": [
+    {
+      "question_number": 1,
+      "problem_text": "the problem as written (e.g., '4 x 9 =')",
+      "answer": "36",
+      "points": 1
+    }
+  ],
+  "total_questions": number,
+  "notes": "any observations about the answer key (optional)"
+}
+
+Important:
+- Include ALL questions you can see
+- If an answer is hard to read, include your best guess
+- Keep answers in their simplest form (e.g., "36" not "= 36")
+- Question numbers should be integers starting from 1`;
+
+export const ANSWER_KEY_EXTRACTION_SYSTEM_PROMPT = `You are an expert at reading and extracting information from math answer keys and worksheets. You can read both printed and handwritten text with high accuracy.`;
+
+/**
  * System prompt for name extraction
  */
 export const NAME_EXTRACTION_SYSTEM_PROMPT = `You are a specialized OCR assistant focused on extracting student names from handwritten homework.
@@ -224,11 +291,18 @@ export interface ParsedGradingResponse {
   nameConfidence: number;
   questions: Array<{
     questionNumber: number;
+    problemText?: string;
+    aiCalculation?: string;
+    aiAnswer?: string;
     studentAnswer: string | null;
+    answerKeyValue?: string | null;
     isCorrect: boolean;
     confidence: number;
+    readabilityConfidence?: number;
+    readabilityIssue?: string | null;
     pointsAwarded: number;
     pointsPossible: number;
+    discrepancy?: string | null;
   }>;
   totalScore: number;
   totalPossible: number;
@@ -252,18 +326,32 @@ export function parseGradingResponse(content: string): ParsedGradingResponse | n
       nameConfidence: parsed.nameConfidence ?? 0,
       questions: parsed.questions.map((q: {
         questionNumber?: number;
+        problemText?: string;
+        aiCalculation?: string;
+        aiAnswer?: string;
         studentAnswer?: string | null;
+        answerKeyValue?: string | null;
         isCorrect?: boolean;
         confidence?: number;
+        readabilityConfidence?: number;
+        readabilityIssue?: string | null;
         pointsAwarded?: number;
         pointsPossible?: number;
+        discrepancy?: string | null;
       }, i: number) => ({
         questionNumber: q.questionNumber ?? i + 1,
+        problemText: q.problemText,
+        aiCalculation: q.aiCalculation,
+        aiAnswer: q.aiAnswer,
         studentAnswer: q.studentAnswer ?? null,
+        answerKeyValue: q.answerKeyValue,
         isCorrect: q.isCorrect ?? false,
         confidence: q.confidence ?? 0.5,
+        readabilityConfidence: q.readabilityConfidence ?? 1.0,
+        readabilityIssue: q.readabilityIssue ?? null,
         pointsAwarded: q.pointsAwarded ?? 0,
         pointsPossible: q.pointsPossible ?? 1,
+        discrepancy: q.discrepancy,
       })),
       totalScore: parsed.totalScore ?? 0,
       totalPossible: parsed.totalPossible ?? 0,

@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Protected routes - redirect to login if not authenticated
-  const protectedPaths = ['/dashboard', '/projects', '/settings', '/onboarding'];
+  const protectedPaths = ['/assignments', '/settings', '/onboarding'];
   const isProtectedPath = protectedPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
   );
@@ -66,7 +66,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // If user is on onboarding but already has complete profile, redirect to dashboard
+  // If user is on onboarding but already has complete profile, redirect to assignments
   if (user && request.nextUrl.pathname.startsWith('/onboarding')) {
     const { data: profile } = await supabase
       .from('profiles')
@@ -76,12 +76,12 @@ export async function middleware(request: NextRequest) {
 
     if (profile?.full_name && profile?.school_name) {
       const url = request.nextUrl.clone();
-      url.pathname = '/dashboard';
+      url.pathname = '/assignments';
       return NextResponse.redirect(url);
     }
   }
 
-  // Auth routes - redirect to dashboard if already authenticated
+  // Auth routes - redirect to assignments if already authenticated
   const authPaths = ['/login', '/signup'];
   const isAuthPath = authPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
@@ -89,7 +89,7 @@ export async function middleware(request: NextRequest) {
 
   if (isAuthPath && user) {
     const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
+    url.pathname = '/assignments';
     return NextResponse.redirect(url);
   }
 

@@ -87,6 +87,12 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     } catch (err) {
       console.error('Camera error:', err);
       if (err instanceof Error) {
+        // Ignore "play() interrupted" errors - these happen in React strict mode
+        // when the component remounts quickly and are not real camera issues
+        if (err.name === 'AbortError' || err.message.includes('interrupted')) {
+          setIsLoading(false);
+          return;
+        }
         if (err.name === 'NotAllowedError') {
           setError('Camera permission denied. Please allow camera access.');
         } else if (err.name === 'NotFoundError') {

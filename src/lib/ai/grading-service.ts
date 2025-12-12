@@ -74,22 +74,64 @@ export class GradingService {
         );
       }
 
-      // Build question results
+      // PHASE 2: Compare AI's blind calculations to answer key (done AFTER AI responds)
+      // The AI never saw the answer key - now we compare programmatically
       const questions: QuestionResult[] = parsed.questions.map((q, index) => {
         const answerKeyEntry = request.answerKey.answers.find(
           (a) => a.questionNumber === q.questionNumber
         );
 
+        // AI's calculated answer is authoritative (it never saw the answer key)
+        const aiAnswer = q.aiAnswer || '';
+        const answerKeyValue = answerKeyEntry?.correctAnswer || null;
+
+        // Check if AI's calculation matches the answer key
+        let discrepancy: string | null = null;
+        if (answerKeyValue && aiAnswer && answerKeyValue !== aiAnswer) {
+          // AI calculated something different than the answer key
+          discrepancy = `AI calculated "${aiAnswer}" but answer key says "${answerKeyValue}"`;
+        }
+
+        // Ensure every question counts - minimum 1 point possible
+        // Even incomplete problems should count in the total
+        const pointsPossible = Math.max(q.pointsPossible || 1, 1);
+        const pointsAwarded = Math.min(q.pointsAwarded || 0, pointsPossible);
+
         return {
           questionNumber: q.questionNumber,
+          problemText: q.problemText,
+          aiCalculation: q.aiCalculation,
+          aiAnswer: aiAnswer,
           studentAnswer: q.studentAnswer,
-          correctAnswer: answerKeyEntry?.correctAnswer || '',
-          isCorrect: q.isCorrect,
-          pointsAwarded: q.pointsAwarded,
-          pointsPossible: q.pointsPossible,
+          correctAnswer: aiAnswer, // AI's calculation is the authority
+          answerKeyValue: answerKeyValue, // For display/comparison only
+          isCorrect: q.isCorrect, // Based on AI's independent calculation
+          pointsAwarded: pointsAwarded,
+          pointsPossible: pointsPossible,
           confidence: q.confidence,
+          readabilityConfidence: q.readabilityConfidence,
+          readabilityIssue: q.readabilityIssue,
+          discrepancy: discrepancy,
         };
       });
+
+      // Check if any question has low readability - flag for review
+      const lowReadabilityQuestions = questions.filter(
+        (q) => q.readabilityConfidence !== undefined && q.readabilityConfidence < 0.7
+      );
+      const hasReadabilityIssues = lowReadabilityQuestions.length > 0;
+
+      // Build review reason if readability issues exist
+      let reviewReason = parsed.reviewReason || undefined;
+      let needsReview = parsed.needsReview;
+
+      if (hasReadabilityIssues && !needsReview) {
+        needsReview = true;
+        const issueDescriptions = lowReadabilityQuestions
+          .map((q) => `Q${q.questionNumber}: ${q.readabilityIssue || 'unclear handwriting'}`)
+          .join('; ');
+        reviewReason = `Low readability confidence: ${issueDescriptions}`;
+      }
 
       // Generate feedback if requested
       if (generateFeedback && questions.length > 0) {
@@ -122,8 +164,8 @@ export class GradingService {
         model: this.getModelForProvider(response.provider),
         processingTimeMs: Date.now() - startTime,
         tokensUsed: response.tokensUsed?.total,
-        needsReview: parsed.needsReview,
-        reviewReason: parsed.reviewReason || undefined,
+        needsReview,
+        reviewReason,
       };
     } catch (error) {
       return this.createFailedResult(
@@ -248,21 +290,14 @@ export function getGradingService(): GradingService {
  */
 export async function imageUrlToInput(url: string): Promise<ImageInput> {
   const response = await fetch(url);
-  const blob = await response.blob();
-  const arrayBuffer = await blob.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
+  const arrayBuffer = await response.arrayBuffer();
 
-  let binary = '';
-  for (let i = 0; i < uint8Array.length; i++) {
-    const byte = uint8Array[i];
-    if (byte !== undefined) {
-      binary += String.fromCharCode(byte);
-    }
-  }
-  const base64 = btoa(binary);
+  // Use Buffer for proper base64 encoding in Node.js
+  const base64 = Buffer.from(arrayBuffer).toString('base64');
 
-  // Determine MIME type
-  const mimeType = blob.type as ImageInput['mimeType'];
+  // Determine MIME type from content-type header
+  const contentType = response.headers.get('content-type') || 'image/jpeg';
+  const mimeType = contentType.split(';')[0] as ImageInput['mimeType'];
 
   return {
     type: 'base64',

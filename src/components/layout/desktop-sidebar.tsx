@@ -3,10 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Home,
   FolderOpen,
-  Camera,
-  BarChart3,
   Settings,
   Users,
   LogOut,
@@ -31,10 +28,7 @@ interface DesktopSidebarProps {
 }
 
 const mainNavItems = [
-  { href: '/dashboard', icon: Home, label: 'Dashboard' },
-  { href: '/projects', icon: FolderOpen, label: 'Projects' },
-  { href: '/scan', icon: Camera, label: 'Scan' },
-  { href: '/results', icon: BarChart3, label: 'Results' },
+  { href: '/assignments', icon: FolderOpen, label: 'Assignments' },
   { href: '/students', icon: Users, label: 'Students' },
 ];
 
@@ -82,16 +76,11 @@ export function DesktopSidebar({ open, onOpenChange }: DesktopSidebarProps) {
             <span className="text-lg font-semibold">Grade Math</span>
           </div>
 
-          {/* Token balance */}
-          <div className="border-b px-4 py-3">
-            <TokenBalance showLabel={true} size="md" />
-          </div>
 
           {/* Main navigation */}
           <nav className="flex-1 space-y-1 px-3 py-4">
             {mainNavItems.map((item) => {
-              const isActive = pathname === item.href ||
-                (item.href !== '/dashboard' && pathname.startsWith(item.href));
+              const isActive = pathname === item.href || pathname.startsWith(item.href);
 
               return (
                 <Link

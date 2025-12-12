@@ -66,10 +66,14 @@ export class OpenAIProvider implements AIProvider {
 
     try {
       // Build image URL for the API
-      const imageUrl =
-        image.type === 'url'
-          ? image.data
-          : `data:${image.mimeType};base64,${image.data}`;
+      let imageUrl: string;
+      if (image.type === 'url') {
+        imageUrl = image.data;
+      } else {
+        // Clean base64 data - remove any whitespace, newlines, or invalid characters
+        const cleanBase64 = image.data.replace(/[\s\r\n]/g, '');
+        imageUrl = `data:${image.mimeType};base64,${cleanBase64}`;
+      }
 
       // Build messages
       type MessageContent = string | Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }>;

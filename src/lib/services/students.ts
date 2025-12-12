@@ -367,6 +367,137 @@ export async function getStudentSubmissions(studentId: string): Promise<{
 }
 
 /**
+ * Merge two students - moves all submissions from source to target, then deletes source
+ */
+export async function mergeStudents(
+  targetId: string,
+  sourceId: string
+): Promise<{ submissionsMoved: number }> {
+  const supabase = createClient();
+
+  // Get current user
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    throw new Error('Not authenticated');
+  }
+
+  // Verify both students exist and belong to user
+  const { data: target, error: targetError } = await supabase
+    .from('student_roster')
+    .select('*')
+    .eq('id', targetId)
+    .eq('user_id', user.id)
+    .single();
+
+  if (targetError || !target) {
+    throw new Error('Target student not found');
+  }
+
+  const { data: source, error: sourceError } = await supabase
+    .from('student_roster')
+    .select('*')
+    .eq('id', sourceId)
+    .eq('user_id', user.id)
+    .single();
+
+  if (sourceError || !source) {
+    throw new Error('Source student not found');
+  }
+
+  // Move all submissions from source to target
+  const { data: submissions, error: subError } = await supabase
+    .from('submissions')
+    .update({ student_id: targetId })
+    .eq('student_id', sourceId)
+    .select('id');
+
+  if (subError) {
+    console.error('Error moving submissions:', subError);
+    throw new Error('Failed to move submissions');
+  }
+
+  const submissionsMoved = submissions?.length || 0;
+
+  // Also update graded_results
+  await supabase
+    .from('graded_results')
+    .update({ student_id: targetId })
+    .eq('student_id', sourceId);
+
+  // Delete source student
+  const { error: deleteError } = await supabase
+    .from('student_roster')
+    .delete()
+    .eq('id', sourceId);
+
+  if (deleteError) {
+    console.error('Error deleting source student:', deleteError);
+    throw new Error('Failed to delete source student after merge');
+  }
+
+  return { submissionsMoved };
+}
+
+/**
+ * Get all students with their submission counts (for the roster overview)
+ */
+export async function getStudentsWithStats(): Promise<Array<Student & {
+  submissionCount: number;
+  gradedCount: number;
+  averageScore: number | null;
+  lastSubmission: string | null;
+}>> {
+  const supabase = createClient();
+
+  // Get all students
+  const students = await getStudents();
+
+  // Get submission stats for each student
+  const result = await Promise.all(
+    students.map(async (student) => {
+      const { data: submissions } = await supabase
+        .from('submissions')
+        .select(`
+          id,
+          status,
+          created_at,
+          graded_results(percentage)
+        `)
+        .eq('student_id', student.id)
+        .order('created_at', { ascending: false });
+
+      const submissionCount = submissions?.length || 0;
+      const gradedSubmissions = submissions?.filter(s =>
+        Array.isArray(s.graded_results) && s.graded_results.length > 0
+      ) || [];
+      const gradedCount = gradedSubmissions.length;
+
+      let averageScore: number | null = null;
+      if (gradedCount > 0) {
+        const totalPercentage = gradedSubmissions.reduce((sum, s) => {
+          const results = s.graded_results as Array<{ percentage: number }> | null;
+          const result = results && results.length > 0 ? results[0] : null;
+          return sum + (result?.percentage || 0);
+        }, 0);
+        averageScore = Math.round(totalPercentage / gradedCount);
+      }
+
+      const lastSubmission = submissions?.[0]?.created_at || null;
+
+      return {
+        ...student,
+        submissionCount,
+        gradedCount,
+        averageScore,
+        lastSubmission,
+      };
+    })
+  );
+
+  return result;
+}
+
+/**
  * Import students from a list of names
  */
 export async function importStudents(names: string[]): Promise<{ created: number; skipped: number }> {

@@ -18,6 +18,11 @@ import {
   saveGradingResult,
 } from '@/lib/ai';
 import type { GradingRequest } from '@/lib/ai';
+import {
+  checkUserCanGrade,
+  incrementPapersGraded,
+  getUserIdFromProject,
+} from '@/lib/services/subscriptions-server';
 
 // Generate unique worker ID
 function getWorkerId(): string {
@@ -64,6 +69,23 @@ export async function POST(request: Request) {
           await markFailed(item.id, 'Submission not found');
           results.push({ submissionId: item.submissionId, success: false, error: 'Submission not found' });
           continue;
+        }
+
+        // Check if user has papers remaining
+        const userId = await getUserIdFromProject(item.projectId);
+        if (userId) {
+          const usageCheck = await checkUserCanGrade(userId, 1);
+          if (!usageCheck.canGrade) {
+            // User is out of papers - don't fail, just skip for now
+            // They can purchase more and the item will be processed later
+            console.log(`User ${userId} out of papers, skipping submission ${item.submissionId}`);
+            results.push({
+              submissionId: item.submissionId,
+              success: false,
+              error: 'Paper limit reached - purchase more to continue',
+            });
+            continue;
+          }
         }
 
         // Get answer key for the project
@@ -135,6 +157,12 @@ export async function POST(request: Request) {
 
         // Mark as completed
         await markCompleted(item.id, resultId);
+
+        // Increment papers graded count for the user
+        if (userId) {
+          await incrementPapersGraded(userId, 1);
+        }
+
         results.push({ submissionId: item.submissionId, success: true });
 
         console.log(`Successfully graded submission ${item.submissionId}: ${result.percentage}%`);

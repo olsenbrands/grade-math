@@ -91,23 +91,23 @@
 ## Phase 4: Project Management (12-16 hrs)
 
 ### 4.1 Project CRUD
-- [ ] Create project service
-- [ ] Build project list page
-- [ ] Build create project page
-- [ ] Build project detail page
-- [ ] Implement project archiving
-- [ ] Add project search/filter
+- [x] Create project service
+- [x] Build project list page
+- [x] Build create project page
+- [x] Build project detail page
+- [x] Implement project archiving
+- [x] Add project search/filter
 
 ### 4.2 Answer Key Management
-- [ ] Build answer key upload UI
-- [ ] Implement manual answer entry
-- [ ] Store answer keys in Supabase Storage
-- [ ] Display answer key status on project
+- [x] Build answer key upload UI
+- [x] Implement manual answer entry
+- [x] Store answer keys in Supabase Storage
+- [x] Display answer key status on project
 
 ### 4.3 Student Roster
-- [ ] Create student roster service
-- [ ] Build student list component
-- [ ] Implement add/edit student
+- [x] Create student roster service
+- [x] Build student list component
+- [x] Implement add/edit student
 - [ ] Link students to project submissions
 
 ---

@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
 
 // Extend Stripe types to include properties not in the SDK type definitions
@@ -16,11 +16,25 @@ interface SubscriptionWithPeriod extends Stripe.Subscription {
   current_period_end: number;
 }
 
-// Use service role for webhook operations (bypasses RLS)
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Lazy initialization to avoid build-time errors when env vars aren't set
+let supabaseAdminInstance: SupabaseClient | null = null;
+
+function getSupabaseAdmin(): SupabaseClient {
+  if (supabaseAdminInstance) {
+    return supabaseAdminInstance;
+  }
+
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing Supabase environment variables');
+  }
+
+  supabaseAdminInstance = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+
+  return supabaseAdminInstance;
+}
 
 // Map Stripe price IDs to plan IDs
 const PRICE_TO_PLAN: Record<string, string> = {
@@ -118,7 +132,7 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session) {
   const planId = (priceId ? PRICE_TO_PLAN[priceId] : null) || session.metadata?.plan_id || 'starter';
 
   // Update user subscription
-  await supabaseAdmin
+  await getSupabaseAdmin()
     .from('user_subscriptions')
     .update({
       plan_id: planId,
@@ -155,7 +169,7 @@ async function handleOveragePurchase(session: Stripe.Checkout.Session) {
 
   // Get current usage period
   const now = new Date().toISOString();
-  const { data: usagePeriod } = await supabaseAdmin
+  const { data: usagePeriod } = await getSupabaseAdmin()
     .from('usage_periods')
     .select('id, overage_papers')
     .eq('user_id', userId)
@@ -164,7 +178,7 @@ async function handleOveragePurchase(session: Stripe.Checkout.Session) {
     .single();
 
   // Create overage purchase record
-  await supabaseAdmin.from('overage_purchases').insert({
+  await getSupabaseAdmin().from('overage_purchases').insert({
     user_id: userId,
     usage_period_id: usagePeriod?.id || null,
     papers_purchased: papers,
@@ -176,7 +190,7 @@ async function handleOveragePurchase(session: Stripe.Checkout.Session) {
   // Add papers to current usage period
   if (usagePeriod) {
     const newOveragePapers = (usagePeriod.overage_papers || 0) + papers;
-    await supabaseAdmin
+    await getSupabaseAdmin()
       .from('usage_periods')
       .update({
         overage_papers: newOveragePapers,
@@ -194,7 +208,7 @@ async function handleSubscriptionUpdate(subscriptionObj: Stripe.Subscription) {
   const customerId = subscription.customer as string;
 
   // Find user by customer ID
-  const { data: userSub } = await supabaseAdmin
+  const { data: userSub } = await getSupabaseAdmin()
     .from('user_subscriptions')
     .select('user_id')
     .eq('stripe_customer_id', customerId)
@@ -214,7 +228,7 @@ async function handleSubscriptionUpdate(subscriptionObj: Stripe.Subscription) {
   else if (subscription.status === 'past_due') status = 'past_due';
   else if (subscription.status === 'trialing') status = 'trialing';
 
-  await supabaseAdmin
+  await getSupabaseAdmin()
     .from('user_subscriptions')
     .update({
       plan_id: planId,
@@ -233,7 +247,7 @@ async function handleSubscriptionUpdate(subscriptionObj: Stripe.Subscription) {
 async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
   const customerId = subscription.customer as string;
 
-  const { data: userSub } = await supabaseAdmin
+  const { data: userSub } = await getSupabaseAdmin()
     .from('user_subscriptions')
     .select('user_id')
     .eq('stripe_customer_id', customerId)
@@ -242,7 +256,7 @@ async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
   if (!userSub) return;
 
   // Revert to free plan
-  await supabaseAdmin
+  await getSupabaseAdmin()
     .from('user_subscriptions')
     .update({
       plan_id: 'free',
@@ -264,7 +278,7 @@ async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
   const customerId = invoice.customer as string;
 
-  const { data: userSub } = await supabaseAdmin
+  const { data: userSub } = await getSupabaseAdmin()
     .from('user_subscriptions')
     .select('user_id')
     .eq('stripe_customer_id', customerId)
@@ -273,7 +287,7 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
   if (!userSub) return;
 
   // Mark subscription as past_due
-  await supabaseAdmin
+  await getSupabaseAdmin()
     .from('user_subscriptions')
     .update({
       status: 'past_due',

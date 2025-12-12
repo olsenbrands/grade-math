@@ -59,30 +59,30 @@
 ## Phase 3: Database & Core Data Models (10-14 hrs)
 
 ### 3.1 Schema Creation
-- [ ] Create `users` extension table
-- [ ] Create `projects` table
-- [ ] Create `student_roster` table
-- [ ] Create `project_answer_keys` table
-- [ ] Create `submissions` table
-- [ ] Create `graded_results` table
-- [ ] Create `processing_queue` table
-- [ ] Create `token_ledger` table
+- [x] Create `users` extension table (profiles)
+- [x] Create `projects` table
+- [x] Create `student_roster` table
+- [x] Create `project_answer_keys` table
+- [x] Create `submissions` table
+- [x] Create `graded_results` table
+- [x] Create `processing_queue` table
+- [x] Create `token_ledger` table
 
 ### 3.2 Row Level Security
-- [ ] RLS policy: users own their data
-- [ ] RLS policy: projects belong to teacher
-- [ ] RLS policy: submissions belong to project owner
-- [ ] RLS policy: token ledger teacher-only access
+- [x] RLS policy: users own their data
+- [x] RLS policy: projects belong to teacher
+- [x] RLS policy: submissions belong to project owner
+- [x] RLS policy: token ledger teacher-only access
 - [ ] Test RLS policies thoroughly
 
 ### 3.3 Supabase Storage
-- [ ] Create `submissions` bucket
-- [ ] Create `answer-keys` bucket
-- [ ] Configure storage policies
+- [x] Create `submissions` bucket
+- [x] Create `answer-keys` bucket
+- [x] Configure storage policies
 - [ ] Set up signed URL generation
 
 ### 3.4 TypeScript Types
-- [ ] Generate types from Supabase schema
+- [x] Generate types from Supabase schema
 - [ ] Create API request/response types
 - [ ] Create component prop types
 

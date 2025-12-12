@@ -3,6 +3,12 @@
 import { useState, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  isHeicFile,
+  isPdfFile,
+  processUploadBatch,
+  type ProcessedFile,
+} from '@/lib/utils/image-processing';
 
 interface FileUploadProps {
   projectId: string;
@@ -15,8 +21,10 @@ interface FileUploadProps {
 interface FileWithPreview {
   file: File;
   preview: string;
-  status: 'pending' | 'uploading' | 'success' | 'error';
+  status: 'pending' | 'processing' | 'uploading' | 'success' | 'error';
   error?: string;
+  originalName?: string;
+  pageNumber?: number;
 }
 
 const ACCEPTED_TYPES = [
@@ -24,6 +32,7 @@ const ACCEPTED_TYPES = [
   'image/png',
   'image/webp',
   'image/heic',
+  'image/heif',
   'application/pdf',
 ];
 
@@ -36,11 +45,15 @@ export function FileUpload({
   const [files, setFiles] = useState<FileWithPreview[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const validateFile = useCallback((file: File): string | null => {
-    if (!ACCEPTED_TYPES.includes(file.type)) {
+    // Check by MIME type or extension for HEIC
+    const isAcceptedType = ACCEPTED_TYPES.includes(file.type) || isHeicFile(file) || isPdfFile(file);
+    if (!isAcceptedType) {
       return 'File type not supported';
     }
     if (file.size > maxSizeMB * 1024 * 1024) {
@@ -49,7 +62,7 @@ export function FileUpload({
     return null;
   }, [maxSizeMB]);
 
-  const addFiles = useCallback((newFiles: FileList | File[]) => {
+  const addFiles = useCallback(async (newFiles: FileList | File[]) => {
     const fileArray = Array.from(newFiles);
     const remaining = maxFiles - files.length;
 
@@ -59,25 +72,64 @@ export function FileUpload({
     }
 
     const toAdd = fileArray.slice(0, remaining);
-    const newFileItems: FileWithPreview[] = [];
 
-    for (const file of toAdd) {
-      const error = validateFile(file);
-      const preview = file.type.startsWith('image/')
-        ? URL.createObjectURL(file)
-        : file.type === 'application/pdf'
-        ? '/pdf-icon.svg'
-        : '';
+    // Check for PDFs or HEIC files that need processing
+    const needsProcessing = toAdd.some((f) => isPdfFile(f) || isHeicFile(f));
 
-      newFileItems.push({
-        file,
-        preview,
-        status: error ? 'error' : 'pending',
-        error: error || undefined,
-      });
+    if (needsProcessing) {
+      setProcessing(true);
+      setProcessingMessage('Processing files...');
+
+      try {
+        const processed = await processUploadBatch(toAdd, (msg) => {
+          setProcessingMessage(msg);
+        });
+
+        const newFileItems: FileWithPreview[] = [];
+        for (const item of processed) {
+          const error = validateFile(item.file);
+          const preview = item.file.type.startsWith('image/')
+            ? URL.createObjectURL(item.file)
+            : '';
+
+          newFileItems.push({
+            file: item.file,
+            preview,
+            status: error ? 'error' : 'pending',
+            error: error || undefined,
+            originalName: item.originalName,
+            pageNumber: item.pageNumber,
+          });
+        }
+
+        setFiles((prev) => [...prev, ...newFileItems]);
+      } catch (error) {
+        console.error('Processing error:', error);
+        alert('Failed to process some files. Please try again.');
+      } finally {
+        setProcessing(false);
+        setProcessingMessage('');
+      }
+    } else {
+      // No processing needed, add files directly
+      const newFileItems: FileWithPreview[] = [];
+
+      for (const file of toAdd) {
+        const error = validateFile(file);
+        const preview = file.type.startsWith('image/')
+          ? URL.createObjectURL(file)
+          : '';
+
+        newFileItems.push({
+          file,
+          preview,
+          status: error ? 'error' : 'pending',
+          error: error || undefined,
+        });
+      }
+
+      setFiles((prev) => [...prev, ...newFileItems]);
     }
-
-    setFiles((prev) => [...prev, ...newFileItems]);
   }, [files.length, maxFiles, validateFile]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -96,13 +148,13 @@ export function FileUpload({
     setDragActive(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      addFiles(e.dataTransfer.files);
+      void addFiles(e.dataTransfer.files);
     }
   }, [addFiles]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      addFiles(e.target.files);
+      void addFiles(e.target.files);
     }
   }, [addFiles]);
 
@@ -198,10 +250,10 @@ export function FileUpload({
             ref={inputRef}
             type="file"
             multiple
-            accept=".jpg,.jpeg,.png,.webp,.heic,.pdf"
+            accept=".jpg,.jpeg,.png,.webp,.heic,.heif,.pdf"
             onChange={handleChange}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            disabled={uploading}
+            disabled={uploading || processing}
           />
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
             <svg
@@ -226,9 +278,38 @@ export function FileUpload({
             or click to select files (max {maxFiles} files, {maxSizeMB}MB each)
           </p>
           <p className="text-xs text-muted-foreground mt-2">
-            Supports: JPEG, PNG, WebP, HEIC, PDF
+            Supports: JPEG, PNG, WebP, HEIC, PDF (multi-page PDFs auto-split)
           </p>
         </div>
+
+        {/* Processing indicator */}
+        {processing && (
+          <div className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg">
+            <svg
+              className="h-5 w-5 animate-spin text-blue-500"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+            <span className="text-sm text-blue-700 dark:text-blue-300">
+              {processingMessage || 'Processing files...'}
+            </span>
+          </div>
+        )}
 
         {/* File list */}
         {files.length > 0 && (
@@ -241,7 +322,7 @@ export function FileUpload({
                 variant="ghost"
                 size="sm"
                 onClick={clearAll}
-                disabled={uploading}
+                disabled={uploading || processing}
               >
                 Clear all
               </Button>
@@ -288,9 +369,19 @@ export function FileUpload({
 
                   {/* File info */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{item.file.name}</p>
+                    <p className="text-sm font-medium truncate">
+                      {item.file.name}
+                      {item.pageNumber && (
+                        <span className="text-xs text-muted-foreground ml-1">
+                          (Page {item.pageNumber})
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {(item.file.size / 1024 / 1024).toFixed(2)} MB
+                      {item.originalName && item.originalName !== item.file.name && (
+                        <span className="ml-1">from {item.originalName}</span>
+                      )}
                       {item.error && (
                         <span className="text-destructive ml-2">- {item.error}</span>
                       )}
@@ -383,15 +474,17 @@ export function FileUpload({
         <div className="flex gap-2">
           <Button
             onClick={handleUpload}
-            disabled={pendingCount === 0 || uploading}
+            disabled={pendingCount === 0 || uploading || processing}
             className="flex-1"
           >
             {uploading
               ? 'Uploading...'
+              : processing
+              ? 'Processing...'
               : `Upload ${pendingCount} file${pendingCount !== 1 ? 's' : ''}`}
           </Button>
           {onClose && (
-            <Button variant="outline" onClick={onClose} disabled={uploading}>
+            <Button variant="outline" onClick={onClose} disabled={uploading || processing}>
               Cancel
             </Button>
           )}

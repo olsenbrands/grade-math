@@ -17,7 +17,7 @@ import {
 } from '@/lib/services/projects';
 import { getAnswerKey } from '@/lib/services/answer-keys';
 import { uploadMultipleSubmissions } from '@/lib/services/submissions';
-import { CameraCapture, FileUpload, SubmissionList } from '@/components/submissions';
+import { CameraCapture, FileUpload, SubmissionList, BatchScan } from '@/components/submissions';
 import type { AnswerKey } from '@/types/database';
 
 export default function ProjectDetailPage() {
@@ -35,6 +35,7 @@ export default function ProjectDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [showBatchScan, setShowBatchScan] = useState(false);
   const [submissionKey, setSubmissionKey] = useState(0); // For refreshing SubmissionList
 
   const loadProject = useCallback(async () => {
@@ -379,7 +380,7 @@ export default function ProjectDetailPage() {
             <CardTitle>Submissions</CardTitle>
             <CardDescription>Student homework submissions</CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button variant="outline" onClick={() => setShowCamera(true)}>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -395,6 +396,25 @@ export default function ProjectDetailPage() {
                 <circle cx="12" cy="13" r="3" />
               </svg>
               Camera
+            </Button>
+            <Button variant="outline" onClick={() => setShowBatchScan(true)}>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                className="mr-2 h-4 w-4"
+              >
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+                <path d="M7 7h.01" />
+                <path d="M17 7h.01" />
+                <path d="M7 17h.01" />
+                <path d="M17 17h.01" />
+              </svg>
+              Batch Scan
             </Button>
             <Button onClick={() => setShowUpload(true)}>
               <svg
@@ -453,6 +473,18 @@ export default function ProjectDetailPage() {
             loadProject();
           }}
           onClose={() => setShowCamera(false)}
+        />
+      )}
+
+      {/* Batch Scan Modal */}
+      {showBatchScan && (
+        <BatchScan
+          onCapture={async (files) => {
+            await uploadMultipleSubmissions(projectId, files);
+            setSubmissionKey((k) => k + 1);
+            loadProject();
+          }}
+          onClose={() => setShowBatchScan(false)}
         />
       )}
 

@@ -123,27 +123,25 @@
 - [x] Upload to Supabase Storage
 
 ### 5.2 Batch Scan Mode
-- [ ] Implement edge detection (optional)
-- [ ] Build hands-free capture UI
-- [ ] Auto-capture on stability
-- [ ] Queue multiple captures
-- [ ] Batch upload handling
-- **Note:** Deferred to future enhancement
+- [x] Implement edge detection
+- [x] Build hands-free capture UI
+- [x] Auto-capture on stability
+- [x] Queue multiple captures
+- [x] Batch upload handling
 
 ### 5.3 Desktop File Upload
 - [x] Build drag-and-drop zone
 - [x] Implement multi-file selection
 - [x] Add progress indicators
 - [x] Show thumbnail previews
-- [ ] Handle HEIC conversion (deferred)
+- [x] Handle HEIC conversion
 
 ### 5.4 PDF Processing
-- [ ] Implement PDF to image conversion
-- [ ] Split multi-page PDFs
-- [ ] Preserve page order
-- [ ] Create submission per page
-- [ ] Handle large PDFs gracefully
-- **Note:** Deferred to future enhancement
+- [x] Implement PDF to image conversion
+- [x] Split multi-page PDFs
+- [x] Preserve page order
+- [x] Create submission per page
+- [x] Handle large PDFs gracefully
 
 ### 5.5 Submission Management
 - [x] Build submission list view

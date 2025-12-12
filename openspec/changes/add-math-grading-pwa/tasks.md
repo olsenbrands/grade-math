@@ -19,7 +19,7 @@
 - [x] Configure Vercel deployment
 
 ### 1.2 Supabase Integration
-- [ ] Create Supabase project
+- [x] Create Supabase project
 - [x] Configure environment variables
 - [x] Set up Supabase client (browser)
 - [x] Set up Supabase server client (SSR)

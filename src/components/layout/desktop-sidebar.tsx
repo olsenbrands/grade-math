@@ -21,7 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { TokenBalance } from '@/components/tokens';
+import { PapersRemaining } from '@/components/billing/PapersRemaining';
 
 interface DesktopSidebarProps {
   open: boolean;
@@ -128,6 +128,11 @@ export function DesktopSidebar({ open, onOpenChange }: DesktopSidebarProps) {
                 </Link>
               );
             })}
+          </div>
+
+          {/* Papers remaining indicator */}
+          <div className="px-4 pb-2">
+            <PapersRemaining size="sm" />
           </div>
 
           {/* User menu */}

@@ -130,7 +130,7 @@ export function OveragePrompt({
 
         <DialogFooter className="sm:justify-between">
           <p className="text-xs text-muted-foreground">
-            Less than $0.10 per paper — hours of your time back
+            Plans as low as $0.04 per paper — hours of your time back
           </p>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Maybe Later

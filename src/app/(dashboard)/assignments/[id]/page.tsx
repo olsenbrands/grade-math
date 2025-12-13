@@ -27,6 +27,9 @@ import {
   type BatchGradingState,
 } from '@/components/ui/BatchGradingProgress';
 import type { AnswerKey } from '@/types/database';
+import { FreePapersBlockingModal } from '@/components/billing/FreePapersBlockingModal';
+import { PapersRemainingInline } from '@/components/billing/PapersRemaining';
+import { getCurrentUsage, type UsageInfo } from '@/lib/services/subscriptions';
 
 export default function AssignmentDetailPage() {
   const router = useRouter();
@@ -55,6 +58,10 @@ export default function AssignmentDetailPage() {
   const [batchGradingState, setBatchGradingState] = useState<BatchGradingState>(createInitialBatchState());
   const [isBatchMinimized, setIsBatchMinimized] = useState(false);
   const batchCancelledRef = useRef(false);
+
+  // Paper usage state
+  const [paperUsage, setPaperUsage] = useState<UsageInfo | null>(null);
+  const [showNoPapersModal, setShowNoPapersModal] = useState(false);
 
   // Batch grade a single submission with retry-once logic
   async function gradeSubmission(submissionId: string): Promise<{ success: boolean; needsReview: boolean }> {
@@ -97,6 +104,22 @@ export default function AssignmentDetailPage() {
   // Start batch grading
   async function handleBatchGrade() {
     if (!project) return;
+
+    // Check paper usage before starting - MUST block if no papers remaining
+    try {
+      const usage = await getCurrentUsage();
+      setPaperUsage(usage);
+
+      if (usage && usage.papers_remaining === 0) {
+        // BLOCK grading - show modal explaining what happened
+        setShowNoPapersModal(true);
+        return; // Do NOT attempt grading
+      }
+    } catch (err) {
+      console.error('Failed to check paper usage:', err);
+      // If we can't check usage, allow grading to proceed
+      // (backend will enforce limits anyway)
+    }
 
     // Get all pending submissions by querying the current list
     const response = await fetch(`/api/submissions?projectId=${projectId}&status=pending`);
@@ -263,6 +286,19 @@ export default function AssignmentDetailPage() {
   useEffect(() => {
     loadProject();
   }, [loadProject]);
+
+  // Load paper usage on mount and after grading completes
+  useEffect(() => {
+    async function loadUsage() {
+      try {
+        const usage = await getCurrentUsage();
+        setPaperUsage(usage);
+      } catch (err) {
+        console.error('Failed to load paper usage:', err);
+      }
+    }
+    loadUsage();
+  }, [submissionKey]); // Refresh when submissions change
 
   async function handleSave() {
     if (!editForm.name.trim()) {
@@ -675,7 +711,14 @@ export default function AssignmentDetailPage() {
               </CardDescription>
             </div>
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Papers remaining indicator - shows when papers are low */}
+            {paperUsage && (
+              <PapersRemainingInline
+                papersRemaining={paperUsage.papers_remaining}
+                isFreeTrial={paperUsage.papers_limit <= 10}
+              />
+            )}
             {/* Grade All Button - shows when there are ungraded submissions */}
             {(project.pending_count || 0) > 0 && (
               <Button
@@ -927,6 +970,13 @@ export default function AssignmentDetailPage() {
           onMaximize={() => setIsBatchMinimized(false)}
         />
       )}
+
+      {/* No Papers Remaining Modal - Blocks grading when papers = 0 */}
+      <FreePapersBlockingModal
+        open={showNoPapersModal}
+        onOpenChange={setShowNoPapersModal}
+        isFreeTrial={(paperUsage?.papers_limit ?? 10) <= 10}
+      />
 
       {/* Settings Section - Collapsed by default */}
       <details className="group">

@@ -159,7 +159,7 @@ export default function PricingPage() {
           </h1>
           <p className="text-xl text-muted-foreground mb-4">
             iGradeMath grades math assignments in minutes, not hours.
-            Less than $0.10 per paper — and hours of your time back.
+            Plans as low as $0.04 per paper — and hours of your time back.
           </p>
         </div>
 

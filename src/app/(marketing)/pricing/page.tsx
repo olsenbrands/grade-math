@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Check, Sparkles, Clock, Brain, ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -135,8 +136,9 @@ export default function PricingPage() {
       {/* Header */}
       <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-2xl font-bold text-primary">
-            iGradeMath
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logo-icon.png" alt="iGradeMath" width={32} height={32} className="rounded" />
+            <span className="text-xl font-bold">iGradeMath</span>
           </Link>
           <div className="flex items-center gap-4">
             <Link href="/login">

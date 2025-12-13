@@ -1,11 +1,11 @@
 {
-  "name": "Grade Math - AI Homework Grading",
-  "short_name": "GradeMath",
+  "name": "iGradeMath - AI Homework Grading",
+  "short_name": "iGradeMath",
   "description": "AI-powered math homework grading for teachers",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#2563eb",
+  "theme_color": "#3d9142",
   "orientation": "portrait-primary",
   "icons": [
     {

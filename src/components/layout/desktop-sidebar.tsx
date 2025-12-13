@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   FolderOpen,
@@ -69,11 +70,15 @@ export function DesktopSidebar({ open, onOpenChange }: DesktopSidebarProps) {
       >
         <div className="flex h-full flex-col">
           {/* Logo */}
-          <div className="flex h-16 items-center gap-2 border-b px-6">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <span className="text-sm font-bold">GM</span>
-            </div>
-            <span className="text-lg font-semibold">Grade Math</span>
+          <div className="flex h-16 items-center gap-2 border-b px-4">
+            <Image
+              src="/logo-icon.png"
+              alt="iGradeMath"
+              width={36}
+              height={36}
+              className="rounded"
+            />
+            <span className="text-lg font-semibold">iGradeMath</span>
           </div>
 
 

@@ -15,34 +15,43 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Grade Math - AI Homework Grading",
-    template: "%s | Grade Math",
+    default: "iGradeMath - AI Homework Grading",
+    template: "%s | iGradeMath",
   },
   description: "AI-powered math homework grading for teachers. Scan, grade, and provide feedback in seconds.",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "GradeMath",
+    title: "iGradeMath",
   },
   formatDetection: {
     telephone: false,
   },
   openGraph: {
     type: "website",
-    siteName: "Grade Math",
-    title: "Grade Math - AI Homework Grading",
+    siteName: "iGradeMath",
+    title: "iGradeMath - AI Homework Grading",
     description: "AI-powered math homework grading for teachers",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Grade Math - AI Homework Grading",
+    title: "iGradeMath - AI Homework Grading",
     description: "AI-powered math homework grading for teachers",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#2563eb",
+  themeColor: "#3d9142",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

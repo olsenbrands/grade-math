@@ -63,7 +63,7 @@ export default function LoginPage() {
       <CardHeader className="space-y-1 text-center">
         <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
         <CardDescription>
-          Sign in to your Grade Math account
+          Sign in to your iGradeMath account
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

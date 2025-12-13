@@ -247,7 +247,7 @@ export default function LandingPage() {
                 </li>
                 <li className="flex items-center gap-2 text-gray-700">
                   <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
-                  Less than $0.10 per paper
+                  Plans as low as $0.04 per paper
                 </li>
                 <li className="flex items-center gap-2 text-gray-700">
                   <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />

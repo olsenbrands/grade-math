@@ -303,8 +303,16 @@ DIAGRAM RULES:
 - NEVER combine labels like "muffinsscones" - keep them SEPARATE
 - The "parts" array must have one entry per item being added together
 - The diagram should visually match the student's worksheet style when an image is provided
-- CRITICAL: The "total" field MUST contain the actual total from the problem (e.g., 170), NOT 1 or null
-- For part-whole problems, "total" is the sum that all parts add up to
+
+TOTAL FIELD - CRITICAL (READ CAREFULLY):
+- The "total" field MUST be the actual sum from the problem
+- If the problem says "total pastries = 170", then "total": 170
+- If the problem says "altogether 250 apples", then "total": 250
+- WRONG: "total": 1 (this is almost never correct)
+- WRONG: "total": null (don't leave it empty)
+- WRONG: "total": 7 (this is the sum of known parts, not the total)
+- RIGHT: "total": 170 (the actual total stated in the problem)
+- Extract the total from phrases like "total of X", "altogether X", "X in all", "= X"
 
 DIAGRAM IS REQUIRED - The example above shows a bar-model. You MUST include a diagram object for word problems. DO NOT use null for diagram when the problem involves quantities or parts.
 
@@ -581,14 +589,46 @@ ${prompt}`,
           // Parse and validate diagram if present
           let diagram: DiagramData | null = null;
 
-          // Log what the AI returned for diagram
-          console.log(`[EXPLANATION] Q${idx + 1} raw diagram:`, JSON.stringify(exp.diagram));
+          // Log what the AI returned for diagram - detailed debugging
+          if (exp.diagram && typeof exp.diagram === 'object') {
+            const d = exp.diagram as Record<string, unknown>;
+            console.log(`[EXPLANATION] Q${idx + 1} diagram type: ${d.type}, total: ${(d.data as Record<string, unknown>)?.total}`);
+          } else {
+            console.log(`[EXPLANATION] Q${idx + 1} no diagram returned`);
+          }
 
           if (exp.diagram && typeof exp.diagram === 'object') {
             const rawDiagram = exp.diagram as Record<string, unknown>;
+            let diagramData = rawDiagram.data as Record<string, unknown>;
+
+            // POST-PROCESS: Fix total if AI returned a bad value
+            if (diagramData && typeof diagramData.total === 'number' && diagramData.total <= 10) {
+              // Try to extract total from problem text
+              const problemText = questions[idx]?.problemText || '';
+              const totalPatterns = [
+                /total[^0-9]*=\s*(\d+)/i,           // "total = 170", "total pastries = 170"
+                /=\s*(\d+)\s*$/,                     // "... = 170" at end
+                /altogether\s+(\d+)/i,               // "altogether 170"
+                /(\d+)\s+in\s+all/i,                 // "170 in all"
+                /total\s+(?:of\s+)?(\d+)/i,          // "total of 170", "total 170"
+              ];
+
+              for (const pattern of totalPatterns) {
+                const match = problemText.match(pattern);
+                if (match && match[1]) {
+                  const extractedTotal = parseInt(match[1], 10);
+                  if (extractedTotal > 10) {
+                    console.log(`[EXPLANATION] Fixed total: ${diagramData.total} -> ${extractedTotal} (from problem text)`);
+                    diagramData = { ...diagramData, total: extractedTotal };
+                    break;
+                  }
+                }
+              }
+            }
+
             const candidateDiagram: DiagramData = {
               type: rawDiagram.type as DiagramData['type'],
-              data: rawDiagram.data as DiagramData['data'],
+              data: diagramData as unknown as DiagramData['data'],
               textFallback:
                 typeof rawDiagram.textFallback === 'string'
                   ? rawDiagram.textFallback

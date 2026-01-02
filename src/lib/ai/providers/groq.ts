@@ -24,7 +24,7 @@ export class GroqProvider implements AIProvider {
       apiKey: config.apiKey || process.env.GROQ_API_KEY || '',
       model: config.model || 'llama-3.2-90b-vision-preview',
       maxTokens: config.maxTokens || 4096,
-      temperature: config.temperature ?? 0.1,
+      temperature: config.temperature ?? 0, // Use 0 for deterministic math output
       timeout: config.timeout || 60000,
     };
   }

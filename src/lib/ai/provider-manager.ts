@@ -2,6 +2,10 @@
  * AI Provider Manager
  *
  * Manages multiple AI providers with automatic fallback
+ *
+ * Configuration:
+ * - AI_PROVIDER_PRIMARY: Set primary provider (openai, anthropic, groq)
+ * - AI_FALLBACK_ORDER: Comma-separated fallback order (e.g., "openai,anthropic,groq")
  */
 
 import type {
@@ -15,10 +19,38 @@ import { createGroqProvider } from './providers/groq';
 import { createOpenAIProvider } from './providers/openai';
 import { createAnthropicProvider } from './providers/anthropic';
 
-// Default configuration
+/**
+ * Parse fallback order from environment variable
+ * Format: "openai,anthropic,groq" (comma-separated)
+ */
+function parseFallbackOrder(): AIProviderName[] {
+  const envOrder = process.env.AI_FALLBACK_ORDER;
+  const primary = process.env.AI_PROVIDER_PRIMARY as AIProviderName | undefined;
+
+  // Default order: GPT-4o first (best for math), then Claude, then Groq
+  const defaultOrder: AIProviderName[] = ['openai', 'anthropic', 'groq'];
+
+  if (envOrder) {
+    const parsed = envOrder.split(',').map(s => s.trim().toLowerCase()) as AIProviderName[];
+    const valid = parsed.filter(p => ['openai', 'anthropic', 'groq'].includes(p));
+    if (valid.length > 0) {
+      return valid;
+    }
+  }
+
+  // If primary is set, move it to front
+  if (primary && ['openai', 'anthropic', 'groq'].includes(primary)) {
+    const order = defaultOrder.filter(p => p !== primary);
+    return [primary, ...order];
+  }
+
+  return defaultOrder;
+}
+
+// Default configuration - GPT-4o is now primary for better math accuracy
 const DEFAULT_CONFIG: AIProviderManagerConfig = {
   providers: [],
-  fallbackOrder: ['groq', 'openai', 'anthropic'],
+  fallbackOrder: parseFallbackOrder(),
   maxRetries: 3,
   retryDelayMs: 1000,
 };

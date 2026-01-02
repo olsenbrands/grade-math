@@ -192,3 +192,105 @@ export function estimateCost(
   const costs = PROVIDER_COSTS[provider];
   return (inputTokens / 1000) * costs.input + (outputTokens / 1000) * costs.output;
 }
+
+// =============================================================================
+// Mathpix OCR Types
+// =============================================================================
+
+export type OcrProvider = 'mathpix' | 'vision';
+
+export interface MathpixConfig {
+  appId: string;
+  appKey: string;
+  timeout?: number; // ms, default 10000
+}
+
+export interface MathpixResult {
+  success: boolean;
+  latex?: string; // LaTeX representation of the math
+  text?: string; // Plain text representation
+  confidence: number; // 0-1 confidence score
+  error?: string;
+  latencyMs: number;
+  // Detailed word-level data (optional)
+  wordData?: Array<{
+    text: string;
+    confidence: number;
+    rect?: { x: number; y: number; width: number; height: number };
+  }>;
+}
+
+// =============================================================================
+// Wolfram Alpha Types
+// =============================================================================
+
+export interface WolframConfig {
+  appId: string;
+  timeout?: number; // ms, default 10000
+}
+
+export interface WolframResult {
+  success: boolean;
+  input: string; // Original input expression
+  result?: string; // Computed result
+  confidence: number; // 0-1 confidence
+  error?: string;
+  latencyMs: number;
+}
+
+// =============================================================================
+// Verification Types
+// =============================================================================
+
+export type VerificationMethod = 'wolfram' | 'chain_of_thought' | 'none';
+
+export type MathDifficulty = 'simple' | 'moderate' | 'complex';
+
+export interface VerificationResult {
+  method: VerificationMethod;
+  originalAnswer: string;
+  verificationAnswer?: string;
+  matched: boolean;
+  conflict: boolean; // True if answers don't match
+  confidence: number;
+  details?: string;
+}
+
+export interface ComparisonResult {
+  matched: boolean;
+  method?: 'exact' | 'numeric' | 'fraction' | 'percentage';
+  aiNormalized?: string;
+  verifyNormalized?: string;
+}
+
+// =============================================================================
+// Enhanced Question Result (with verification data)
+// =============================================================================
+
+export interface QuestionResultEnhanced extends QuestionResult {
+  // OCR data
+  mathpixLatex?: string;
+  ocrConfidence?: number;
+
+  // Verification
+  difficultyLevel?: MathDifficulty;
+  verificationMethod?: VerificationMethod;
+  wolframVerified?: boolean;
+  wolframAnswer?: string;
+  verificationConflict?: boolean;
+}
+
+// =============================================================================
+// Enhanced Grading Result (with OCR and verification metadata)
+// =============================================================================
+
+export interface GradingResultEnhanced extends GradingResult {
+  // OCR metadata
+  ocrProvider?: OcrProvider;
+  ocrConfidence?: number;
+
+  // Verification metadata
+  verificationMethod?: VerificationMethod;
+  verificationResult?: Record<string, unknown>;
+  mathDifficulty?: MathDifficulty;
+}

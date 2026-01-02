@@ -24,7 +24,7 @@ export class AnthropicProvider implements AIProvider {
       apiKey: config.apiKey || process.env.ANTHROPIC_API_KEY || '',
       model: config.model || 'claude-3-5-sonnet-20241022',
       maxTokens: config.maxTokens || 4096,
-      temperature: config.temperature ?? 0.1,
+      temperature: config.temperature ?? 0, // Use 0 for deterministic math output
       timeout: config.timeout || 60000,
     };
   }

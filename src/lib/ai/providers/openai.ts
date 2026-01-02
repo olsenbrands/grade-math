@@ -24,7 +24,7 @@ export class OpenAIProvider implements AIProvider {
       apiKey: config.apiKey || process.env.OPENAI_API_KEY || '',
       model: config.model || 'gpt-4o',
       maxTokens: config.maxTokens || 4096,
-      temperature: config.temperature ?? 0.1,
+      temperature: config.temperature ?? 0, // Use 0 for deterministic math output
       timeout: config.timeout || 60000,
     };
   }

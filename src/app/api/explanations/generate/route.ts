@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fetch the graded result with project grade level and methodology
+    // Fetch the graded result with project grade level, methodology, and image URL
     const { data: result, error: resultError } = await supabase
       .from('graded_results')
       .select(
@@ -70,6 +70,7 @@ export async function POST(request: Request) {
         id,
         questions_json,
         submission:submissions!inner(
+          image_url,
           project:projects!inner(user_id, grade_level, teaching_methodology)
         )
       `
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
 
     // Verify ownership - submission is a single object due to !inner join
     const submission = result.submission as unknown as {
+      image_url: string | null;
       project: {
         user_id: string;
         grade_level: string | null;
@@ -93,6 +95,7 @@ export async function POST(request: Request) {
       }
     } | null;
     const projectUserId = submission?.project?.user_id;
+    const imageUrl = submission?.image_url;
     if (projectUserId !== user.id) {
       return NextResponse.json(
         { error: 'Access denied' },
@@ -163,14 +166,15 @@ export async function POST(request: Request) {
       pointsPossible: q.pointsPossible,
     }));
 
-    // Generate explanations with methodology
-    console.log(`[EXPLANATION] Generating with grade=${gradeLevel}, methodology=${methodology}`);
+    // Generate explanations with methodology and image for visual context
+    console.log(`[EXPLANATION] Generating with grade=${gradeLevel}, methodology=${methodology}, hasImage=${!!imageUrl}`);
     const explanationService = getExplanationService();
     const explanationResult = await explanationService.generateExplanations({
       resultId,
       questions,
       gradeLevel,
       methodology,
+      imageUrl: imageUrl || undefined, // Pass image URL for visual diagram matching
     });
 
     if (!explanationResult.success) {

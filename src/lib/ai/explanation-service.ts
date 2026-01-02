@@ -30,8 +30,20 @@ interface TextGenerationResponse {
   error?: string;
 }
 
+// Message content can be string or array (for vision)
+type MessageContent = string | Array<{
+  type: 'text' | 'image_url';
+  text?: string;
+  image_url?: { url: string; detail?: 'low' | 'high' | 'auto' };
+}>;
+
+interface ChatMessage {
+  role: 'system' | 'user';
+  content: MessageContent;
+}
+
 async function generateText(
-  messages: Array<{ role: 'system' | 'user'; content: string }>,
+  messages: Array<ChatMessage>,
   options: TextGenerationOptions = {}
 ): Promise<TextGenerationResponse> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -133,6 +145,7 @@ export interface ExplanationRequest {
   questions: QuestionForExplanation[];
   gradeLevel: GradeLevel;
   methodology?: TeachingMethodology; // Optional - defaults to 'standard'
+  imageUrl?: string; // Optional - original worksheet image for visual context
 }
 
 // ============================================
@@ -368,7 +381,7 @@ export class ExplanationService {
     request: ExplanationRequest
   ): Promise<ExplanationResult> {
     const startTime = Date.now();
-    const { questions, gradeLevel, methodology = 'standard' } = request;
+    const { questions, gradeLevel, methodology = 'standard', imageUrl } = request;
     const gradeBand = getGradeBand(gradeLevel);
 
     if (questions.length === 0) {
@@ -386,13 +399,38 @@ export class ExplanationService {
     try {
       // Build the prompt with methodology
       const prompt = buildExplanationPrompt(questions, gradeLevel, methodology);
-      console.log(`[EXPLANATION] Generating with methodology: ${methodology}, grade: ${gradeLevel}`);
+      console.log(`[EXPLANATION] Generating with methodology: ${methodology}, grade: ${gradeLevel}, hasImage: ${!!imageUrl}`);
+
+      // Build user message - include image if available
+      let userMessage: ChatMessage;
+      if (imageUrl) {
+        // Vision message with image + text
+        userMessage = {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: imageUrl, detail: 'high' },
+            },
+            {
+              type: 'text',
+              text: `STUDENT'S WORKSHEET IMAGE: Look at the attached image to see the student's work and any visual diagrams they used.
+
+IMPORTANT: When you create your diagram, try to match the visual STYLE shown in the student's worksheet. If they drew stacked horizontal bars, use that layout. If they drew a pie chart, match that style.
+
+${prompt}`,
+            },
+          ],
+        };
+      } else {
+        userMessage = { role: 'user', content: prompt };
+      }
 
       // Call GPT-4o with JSON mode for reliable structured output
       const response = await generateText(
         [
           { role: 'system', content: EXPLANATION_SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
+          userMessage,
         ],
         {
           maxTokens: 4000, // Enough for ~10-15 questions with detailed explanations

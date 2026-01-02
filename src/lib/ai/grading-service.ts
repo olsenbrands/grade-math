@@ -48,8 +48,11 @@ export class GradingService {
     const { generateFeedback = false, preferredProvider } = options;
 
     try {
-      // Build the grading prompt
-      const gradingPrompt = buildGradingPrompt(request.answerKey);
+      // Build the grading prompt - works with or without answer key
+      // AI grades independently using blind grading (solves problems itself)
+      const gradingPrompt = request.answerKey
+        ? buildGradingPrompt(request.answerKey)
+        : buildGradingPrompt({ type: 'manual', totalQuestions: 0, answers: [] });
 
       // Send to AI
       const response = await this.manager.analyzeImage(
@@ -76,16 +79,20 @@ export class GradingService {
 
       // PHASE 2: Compare AI's blind calculations to answer key (done AFTER AI responds)
       // The AI never saw the answer key - now we compare programmatically
+      // If no answer key provided, AI's calculation is the only authority
+      const hasAnswerKey = request.answerKey && request.answerKey.answers.length > 0;
+
       const questions: QuestionResult[] = parsed.questions.map((q, index) => {
-        const answerKeyEntry = request.answerKey.answers.find(
-          (a) => a.questionNumber === q.questionNumber
-        );
+        // Look up answer key entry only if answer key exists
+        const answerKeyEntry = hasAnswerKey
+          ? request.answerKey!.answers.find((a) => a.questionNumber === q.questionNumber)
+          : undefined;
 
         // AI's calculated answer is authoritative (it never saw the answer key)
         const aiAnswer = q.aiAnswer || '';
         const answerKeyValue = answerKeyEntry?.correctAnswer || null;
 
-        // Check if AI's calculation matches the answer key
+        // Check if AI's calculation matches the answer key (only if key provided)
         let discrepancy: string | null = null;
         if (answerKeyValue && aiAnswer && answerKeyValue !== aiAnswer) {
           // AI calculated something different than the answer key
@@ -104,7 +111,7 @@ export class GradingService {
           aiAnswer: aiAnswer,
           studentAnswer: q.studentAnswer,
           correctAnswer: aiAnswer, // AI's calculation is the authority
-          answerKeyValue: answerKeyValue, // For display/comparison only
+          answerKeyValue: answerKeyValue, // For display/comparison only (null if no key)
           isCorrect: q.isCorrect, // Based on AI's independent calculation
           pointsAwarded: pointsAwarded,
           pointsPossible: pointsPossible,

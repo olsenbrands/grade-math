@@ -28,7 +28,7 @@ export interface ImageInput {
 export interface GradingRequest {
   submissionId: string;
   image: ImageInput;
-  answerKey: AnswerKeyData;
+  answerKey?: AnswerKeyData; // Optional - AI can grade without answer key
   options?: GradingOptions;
 }
 

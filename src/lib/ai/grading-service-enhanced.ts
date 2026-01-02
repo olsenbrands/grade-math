@@ -294,9 +294,11 @@ export class EnhancedGradingService {
     options: EnhancedGradingOptions,
     provider: AIProviderName
   ): Promise<QuestionResultEnhanced> {
-    const answerKeyEntry = request.answerKey.answers.find(
-      (a) => a.questionNumber === q.questionNumber
-    );
+    // Look up answer key entry only if answer key exists
+    const hasAnswerKey = request.answerKey && request.answerKey.answers.length > 0;
+    const answerKeyEntry = hasAnswerKey
+      ? request.answerKey!.answers.find((a) => a.questionNumber === q.questionNumber)
+      : undefined;
 
     const aiAnswer = q.aiAnswer || '';
     const answerKeyValue = answerKeyEntry?.correctAnswer || null;
@@ -390,7 +392,9 @@ export class EnhancedGradingService {
     answerKey: GradingRequest['answerKey'],
     mathpixData: { latex?: string; text?: string; confidence: number } | null
   ): string {
-    let prompt = buildGradingPrompt(answerKey);
+    // Handle optional answer key - create empty one if not provided
+    const answerKeyData = answerKey || { type: 'manual' as const, totalQuestions: 0, answers: [] };
+    let prompt = buildGradingPrompt(answerKeyData);
 
     if (mathpixData) {
       prompt += `

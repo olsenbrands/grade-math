@@ -8,7 +8,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import {
-  getGradingService,
+  getEnhancedGradingService,
   imageUrlToInput,
   createAnswerKeyData,
   getNextPendingItem,
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     const url = new URL(request.url);
     const maxItems = parseInt(url.searchParams.get('max') || '5', 10);
 
-    const gradingService = getGradingService();
+    const gradingService = getEnhancedGradingService();
     const supabase = await createClient();
 
     // Process items until we hit the limit or run out
@@ -136,9 +136,12 @@ export async function POST(request: Request) {
           },
         };
 
-        // Grade the submission
-        const result = await gradingService.gradeSubmission(gradingRequest, {
+        // Grade the submission using Enhanced service (Mathpix + GPT-4o + Wolfram)
+        const result = await gradingService.gradeSubmissionEnhanced(gradingRequest, {
+          requireMathpix: true,
+          enableVerification: true,
           generateFeedback: true,
+          trackCosts: true,
         });
 
         if (!result.success) {
@@ -204,12 +207,14 @@ export async function GET() {
     const { getQueueStats } = await import('@/lib/ai');
     const stats = await getQueueStats();
 
-    const gradingService = getGradingService();
-    const providers = gradingService.getAvailableProviders();
+    const gradingService = getEnhancedGradingService();
+    const health = await gradingService.healthCheck();
 
     return NextResponse.json({
       queue: stats,
-      providers,
+      providers: health.providers,
+      mathpix: health.mathpix,
+      wolfram: health.wolfram,
     });
   } catch (error) {
     return NextResponse.json(

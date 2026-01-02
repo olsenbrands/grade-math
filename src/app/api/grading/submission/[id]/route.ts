@@ -7,7 +7,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import {
-  getGradingService,
+  getEnhancedGradingService,
   imageUrlToInput,
   createAnswerKeyData,
   saveGradingResult,
@@ -122,10 +122,13 @@ export async function POST(request: Request, { params }: RouteParams) {
       },
     };
 
-    // Grade
-    const gradingService = getGradingService();
-    const result = await gradingService.gradeSubmission(gradingRequest, {
+    // Grade using Enhanced service (Mathpix + GPT-4o + Wolfram)
+    const gradingService = getEnhancedGradingService();
+    const result = await gradingService.gradeSubmissionEnhanced(gradingRequest, {
+      requireMathpix: true,
+      enableVerification: true,
       generateFeedback: true,
+      trackCosts: true,
     });
 
     if (!result.success) {

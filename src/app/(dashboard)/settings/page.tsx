@@ -16,15 +16,48 @@ import {
   getDaysRemaining,
   openCustomerPortal,
   createOverageCheckout,
+  createAddonCheckout,
   type SubscriptionWithUsage,
 } from '@/lib/services/subscriptions';
 import type { User } from '@supabase/supabase-js';
+
+import type { TeachingMethodology } from '@/types/database';
 
 interface Profile {
   id: string;
   full_name: string | null;
   school_name: string | null;
+  grade_level: string | null;
+  teaching_methodology: TeachingMethodology | null;
 }
+
+const GRADE_OPTIONS = [
+  { value: 'K', label: 'Kindergarten' },
+  { value: '1', label: '1st Grade' },
+  { value: '2', label: '2nd Grade' },
+  { value: '3', label: '3rd Grade' },
+  { value: '4', label: '4th Grade' },
+  { value: '5', label: '5th Grade' },
+  { value: '6', label: '6th Grade' },
+  { value: '7', label: '7th Grade' },
+  { value: '8', label: '8th Grade' },
+  { value: '9', label: '9th Grade' },
+  { value: '10', label: '10th Grade' },
+  { value: '11', label: '11th Grade' },
+  { value: '12', label: '12th Grade' },
+  { value: 'college', label: 'College' },
+];
+
+const METHODOLOGY_OPTIONS: { value: TeachingMethodology; label: string; description: string }[] = [
+  { value: 'standard', label: 'Standard (Balanced)', description: 'Combines conceptual understanding with procedural fluency' },
+  { value: 'singapore', label: 'Singapore Math / Bar Model', description: 'Concrete-Pictorial-Abstract progression with visual models' },
+  { value: 'traditional', label: 'Traditional / Direct Instruction', description: 'Step-by-step procedures with teacher-guided examples' },
+  { value: 'common-core', label: 'Common Core', description: 'Deep conceptual understanding with multiple strategies' },
+  { value: 'montessori', label: 'Montessori', description: 'Self-discovery through manipulatives and concrete materials' },
+  { value: 'saxon', label: 'Saxon Math', description: 'Incremental learning with constant spiral review' },
+  { value: 'classical', label: 'Classical Education', description: 'Logic-based with formal mathematical reasoning' },
+  { value: 'waldorf', label: 'Waldorf / Steiner', description: 'Artistic integration with movement and storytelling' },
+];
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -43,6 +76,10 @@ export default function SettingsPage() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [billingLoading, setBillingLoading] = useState(false);
   const [overageLoading, setOverageLoading] = useState(false);
+  const [gradeLevelSaving, setGradeLevelSaving] = useState(false);
+  const [methodologySaving, setMethodologySaving] = useState(false);
+  const [hasSmartExplanations, setHasSmartExplanations] = useState(false);
+  const [addonLoading, setAddonLoading] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -64,7 +101,7 @@ export default function SettingsPage() {
       // Get profile
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('id, full_name, school_name')
+        .select('id, full_name, school_name, grade_level, teaching_methodology')
         .eq('id', user.id)
         .single();
 
@@ -83,6 +120,8 @@ export default function SettingsPage() {
       try {
         const subData = await getSubscriptionWithUsage();
         setSubscriptionData(subData);
+        // Check if user has Smart Explanations add-on
+        setHasSmartExplanations(subData.subscription?.has_smart_explanations === true);
       } catch (e) {
         console.error('Failed to load subscription data:', e);
       }
@@ -198,6 +237,73 @@ export default function SettingsPage() {
       alert('Something went wrong. Please try again.');
     } finally {
       setOverageLoading(false);
+    }
+  }
+
+  async function handleGradeLevelChange(newGradeLevel: string) {
+    if (!user) return;
+
+    setGradeLevelSaving(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          grade_level: newGradeLevel,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setProfile((prev) => prev ? { ...prev, grade_level: newGradeLevel } : null);
+    } catch (err) {
+      console.error('Failed to save grade level:', err);
+      alert('Failed to save grade level');
+    } finally {
+      setGradeLevelSaving(false);
+    }
+  }
+
+  async function handleMethodologyChange(newMethodology: TeachingMethodology) {
+    if (!user) return;
+
+    setMethodologySaving(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          teaching_methodology: newMethodology,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setProfile((prev) => prev ? { ...prev, teaching_methodology: newMethodology } : null);
+    } catch (err) {
+      console.error('Failed to save teaching methodology:', err);
+      alert('Failed to save teaching methodology');
+    } finally {
+      setMethodologySaving(false);
+    }
+  }
+
+  async function handleAddSmartExplanations() {
+    setAddonLoading(true);
+    try {
+      const checkoutUrl = await createAddonCheckout('smart_explanations');
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+      } else {
+        alert('Unable to start checkout. Please try again.');
+      }
+    } catch (error) {
+      console.error('Add-on checkout error:', error);
+      alert('Something went wrong. Please try again.');
+    } finally {
+      setAddonLoading(false);
     }
   }
 
@@ -511,6 +617,172 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Smart Explanations Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+              <path d="M12 2v4" />
+              <path d="m6.343 6.343 2.829 2.829" />
+              <path d="M2 12h4" />
+              <path d="m6.343 17.657 2.829-2.829" />
+              <path d="M12 18v4" />
+              <path d="m17.657 17.657-2.829-2.829" />
+              <path d="M18 12h4" />
+              <path d="m17.657 6.343-2.829 2.829" />
+            </svg>
+            Smart Explanations
+          </CardTitle>
+          <CardDescription>
+            Age-appropriate feedback for your students
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Grade Level Setting */}
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <p className="font-medium">Default Grade Level</p>
+              <p className="text-sm text-muted-foreground">
+                Set the grade level for age-appropriate explanations
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={profile?.grade_level || '6'}
+                onChange={(e) => handleGradeLevelChange(e.target.value)}
+                disabled={gradeLevelSaving}
+                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {GRADE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {gradeLevelSaving && (
+                <svg className="animate-spin h-4 w-4 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              )}
+            </div>
+          </div>
+
+          {/* Teaching Methodology Setting */}
+          <div className="border-t pt-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex-1">
+                <p className="font-medium">Teaching Methodology</p>
+                <p className="text-sm text-muted-foreground">
+                  Choose how math concepts are explained to match your teaching style
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={profile?.teaching_methodology || 'standard'}
+                  onChange={(e) => handleMethodologyChange(e.target.value as TeachingMethodology)}
+                  disabled={methodologySaving}
+                  className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-w-[200px]"
+                >
+                  {METHODOLOGY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {methodologySaving && (
+                  <svg className="animate-spin h-4 w-4 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                )}
+              </div>
+            </div>
+            {/* Methodology description */}
+            <p className="text-xs text-muted-foreground mt-2 italic">
+              {METHODOLOGY_OPTIONS.find(m => m.value === (profile?.teaching_methodology || 'standard'))?.description}
+            </p>
+          </div>
+
+          {/* Smart Explanations Status / Upgrade */}
+          <div className="border-t pt-4">
+            {hasSmartExplanations ? (
+              <div className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-900">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-green-600 dark:text-green-400">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-medium text-green-800 dark:text-green-200">Smart Explanations Active</p>
+                    <p className="text-sm text-green-700 dark:text-green-300">
+                      Generate personalized feedback for your students
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between p-4 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-950/30 dark:to-purple-950/30 rounded-lg border border-violet-200 dark:border-violet-900">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="font-medium text-violet-800 dark:text-violet-200">Upgrade to Smart Explanations</p>
+                    <span className="text-xs bg-violet-200 dark:bg-violet-900 text-violet-800 dark:text-violet-200 px-2 py-0.5 rounded-full">
+                      $5/mo
+                    </span>
+                  </div>
+                  <p className="text-sm text-violet-700 dark:text-violet-300 mb-2">
+                    Get AI-powered, grade-appropriate explanations for every question
+                  </p>
+                  <ul className="text-sm text-violet-600 dark:text-violet-400 space-y-1">
+                    <li className="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                      Step-by-step solutions in student-friendly language
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                      Personalized feedback: what they did right & how to improve
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                      Research-backed, growth mindset encouragement
+                    </li>
+                  </ul>
+                </div>
+                <Button
+                  className="bg-violet-600 hover:bg-violet-700"
+                  onClick={handleAddSmartExplanations}
+                  disabled={addonLoading}
+                >
+                  {addonLoading ? (
+                    <>
+                      <svg
+                        className="animate-spin -ml-1 mr-2 h-4 w-4"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Loading...
+                    </>
+                  ) : (
+                    'Add to Plan'
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 

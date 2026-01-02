@@ -6,6 +6,17 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+// Teaching methodology type - matches values in RAG system
+export type TeachingMethodology =
+  | 'standard'        // Default - balanced approach
+  | 'singapore'       // Singapore Math / Bar Model / CPA
+  | 'traditional'     // Traditional / Direct Instruction / Algorithm-focused
+  | 'common-core'     // Common Core - conceptual + procedural balance
+  | 'montessori'      // Montessori - hands-on, concrete materials
+  | 'saxon'           // Saxon Math - incremental, spiral review
+  | 'classical'       // Classical Education - Trivium/Quadrivium
+  | 'waldorf'         // Waldorf/Steiner - artistic, movement-based
+
 export type Database = {
   public: {
     Tables: {
@@ -16,6 +27,7 @@ export type Database = {
           full_name: string | null
           school_name: string | null
           grade_level: string | null
+          teaching_methodology: TeachingMethodology | null
           avatar_url: string | null
           created_at: string
           updated_at: string
@@ -26,6 +38,7 @@ export type Database = {
           full_name?: string | null
           school_name?: string | null
           grade_level?: string | null
+          teaching_methodology?: TeachingMethodology | null
           avatar_url?: string | null
           created_at?: string
           updated_at?: string
@@ -36,6 +49,7 @@ export type Database = {
           full_name?: string | null
           school_name?: string | null
           grade_level?: string | null
+          teaching_methodology?: TeachingMethodology | null
           avatar_url?: string | null
           created_at?: string
           updated_at?: string
@@ -58,6 +72,8 @@ export type Database = {
           description: string | null
           date: string
           is_archived: boolean
+          grade_level: string | null
+          teaching_methodology: TeachingMethodology | null
           created_at: string
           updated_at: string
         }
@@ -68,6 +84,8 @@ export type Database = {
           description?: string | null
           date?: string
           is_archived?: boolean
+          grade_level?: string | null
+          teaching_methodology?: TeachingMethodology | null
           created_at?: string
           updated_at?: string
         }
@@ -78,6 +96,8 @@ export type Database = {
           description?: string | null
           date?: string
           is_archived?: boolean
+          grade_level?: string | null
+          teaching_methodology?: TeachingMethodology | null
           created_at?: string
           updated_at?: string
         }

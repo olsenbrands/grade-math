@@ -48,6 +48,13 @@ export const PLAN_PRICE_IDS: Record<string, string> = {
 export const OVERAGE_PRICE_ID = process.env.STRIPE_PRICE_OVERAGE || '';
 
 /**
+ * Add-on price IDs
+ */
+export const ADDON_PRICE_IDS: Record<string, string> = {
+  smart_explanations: process.env.STRIPE_PRICE_SMART_EXPLANATIONS || '',
+};
+
+/**
  * Get the app URL for redirects
  */
 export function getAppUrl(): string {

@@ -30,6 +30,36 @@ import type { AnswerKey } from '@/types/database';
 import { FreePapersBlockingModal } from '@/components/billing/FreePapersBlockingModal';
 import { PapersRemainingInline } from '@/components/billing/PapersRemaining';
 import { getCurrentUsage, type UsageInfo } from '@/lib/services/subscriptions';
+import { createClient } from '@/lib/supabase/client';
+import type { TeachingMethodology } from '@/types/database';
+
+const GRADE_OPTIONS = [
+  { value: 'K', label: 'Kindergarten' },
+  { value: '1', label: '1st Grade' },
+  { value: '2', label: '2nd Grade' },
+  { value: '3', label: '3rd Grade' },
+  { value: '4', label: '4th Grade' },
+  { value: '5', label: '5th Grade' },
+  { value: '6', label: '6th Grade' },
+  { value: '7', label: '7th Grade' },
+  { value: '8', label: '8th Grade' },
+  { value: '9', label: '9th Grade' },
+  { value: '10', label: '10th Grade' },
+  { value: '11', label: '11th Grade' },
+  { value: '12', label: '12th Grade' },
+  { value: 'college', label: 'College' },
+];
+
+const METHODOLOGY_OPTIONS: { value: TeachingMethodology; label: string; shortLabel: string }[] = [
+  { value: 'standard', label: 'Standard (Balanced)', shortLabel: 'Standard' },
+  { value: 'singapore', label: 'Singapore Math / Bar Model', shortLabel: 'Singapore' },
+  { value: 'traditional', label: 'Traditional / Direct Instruction', shortLabel: 'Traditional' },
+  { value: 'common-core', label: 'Common Core', shortLabel: 'Common Core' },
+  { value: 'montessori', label: 'Montessori', shortLabel: 'Montessori' },
+  { value: 'saxon', label: 'Saxon Math', shortLabel: 'Saxon' },
+  { value: 'classical', label: 'Classical Education', shortLabel: 'Classical' },
+  { value: 'waldorf', label: 'Waldorf / Steiner', shortLabel: 'Waldorf' },
+];
 
 export default function AssignmentDetailPage() {
   const router = useRouter();
@@ -62,6 +92,14 @@ export default function AssignmentDetailPage() {
   // Paper usage state
   const [paperUsage, setPaperUsage] = useState<UsageInfo | null>(null);
   const [showNoPapersModal, setShowNoPapersModal] = useState(false);
+
+  // Grade level state for Smart Explanations
+  const [gradeLevelSaving, setGradeLevelSaving] = useState(false);
+  const [teacherDefaultGradeLevel, setTeacherDefaultGradeLevel] = useState<string | null>(null);
+
+  // Teaching methodology state
+  const [methodologySaving, setMethodologySaving] = useState(false);
+  const [teacherDefaultMethodology, setTeacherDefaultMethodology] = useState<TeachingMethodology | null>(null);
 
   // Batch grade a single submission with retry-once logic
   async function gradeSubmission(submissionId: string): Promise<{ success: boolean; needsReview: boolean }> {
@@ -350,6 +388,81 @@ export default function AssignmentDetailPage() {
     }
   }
 
+  // Load teacher's default grade level and methodology
+  useEffect(() => {
+    async function loadTeacherDefaults() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data } = await supabase
+          .from('profiles')
+          .select('grade_level, teaching_methodology')
+          .eq('id', user.id)
+          .single();
+
+        setTeacherDefaultGradeLevel(data?.grade_level || '6');
+        setTeacherDefaultMethodology((data?.teaching_methodology as TeachingMethodology) || 'standard');
+      } catch (err) {
+        console.error('Failed to load teacher defaults:', err);
+      }
+    }
+    loadTeacherDefaults();
+  }, []);
+
+  // Handle assignment grade level change
+  async function handleAssignmentGradeLevelChange(newGradeLevel: string) {
+    if (!project) return;
+
+    setGradeLevelSaving(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          grade_level: newGradeLevel,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', projectId);
+
+      if (error) throw error;
+
+      setProject((prev) => prev ? { ...prev, grade_level: newGradeLevel } : null);
+    } catch (err) {
+      console.error('Failed to save grade level:', err);
+      alert('Failed to save grade level');
+    } finally {
+      setGradeLevelSaving(false);
+    }
+  }
+
+  // Handle assignment teaching methodology change
+  async function handleAssignmentMethodologyChange(newMethodology: string) {
+    if (!project) return;
+
+    setMethodologySaving(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          teaching_methodology: newMethodology,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', projectId);
+
+      if (error) throw error;
+
+      setProject((prev) => prev ? { ...prev, teaching_methodology: newMethodology as TeachingMethodology } : null);
+    } catch (err) {
+      console.error('Failed to save teaching methodology:', err);
+      alert('Failed to save teaching methodology');
+    } finally {
+      setMethodologySaving(false);
+    }
+  }
+
   // Corny math jokes for loading screen
   const mathJokes = [
     "Why was the equal sign so humble? Because it knew it wasn't less than or greater than anyone else.",
@@ -525,6 +638,57 @@ export default function AssignmentDetailPage() {
               <p className="text-sm text-muted-foreground mt-1">
                 {project.description ? `${project.description} · ` : ''}{new Date(project.date).toLocaleDateString()}
               </p>
+              {/* Grade Level & Methodology Selectors for Smart Explanations */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="grade-level-select" className="text-sm text-violet-600 dark:text-violet-400">
+                    Grade:
+                  </label>
+                  <select
+                    id="grade-level-select"
+                    className="text-sm border border-violet-300 dark:border-violet-700 rounded-md px-2 py-1 bg-background text-violet-700 dark:text-violet-400 focus:ring-violet-500 focus:border-violet-500"
+                    value={project.grade_level || ''}
+                    onChange={(e) => handleAssignmentGradeLevelChange(e.target.value)}
+                    disabled={gradeLevelSaving}
+                  >
+                    <option value="">
+                      Default ({GRADE_OPTIONS.find(o => o.value === (teacherDefaultGradeLevel || '6'))?.label || '6th Grade'})
+                    </option>
+                    {GRADE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {gradeLevelSaving && (
+                    <span className="text-xs text-violet-500">Saving...</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <label htmlFor="methodology-select" className="text-sm text-violet-600 dark:text-violet-400">
+                    Method:
+                  </label>
+                  <select
+                    id="methodology-select"
+                    className="text-sm border border-violet-300 dark:border-violet-700 rounded-md px-2 py-1 bg-background text-violet-700 dark:text-violet-400 focus:ring-violet-500 focus:border-violet-500"
+                    value={(project as { teaching_methodology?: string }).teaching_methodology || ''}
+                    onChange={(e) => handleAssignmentMethodologyChange(e.target.value)}
+                    disabled={methodologySaving}
+                  >
+                    <option value="">
+                      Default ({METHODOLOGY_OPTIONS.find(o => o.value === (teacherDefaultMethodology || 'standard'))?.shortLabel || 'Standard'})
+                    </option>
+                    {METHODOLOGY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.shortLabel}
+                      </option>
+                    ))}
+                  </select>
+                  {methodologySaving && (
+                    <span className="text-xs text-violet-500">Saving...</span>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
@@ -988,21 +1152,68 @@ export default function AssignmentDetailPage() {
         </summary>
         <Card className="mt-2">
           <CardContent className="pt-6 space-y-4">
+            {/* Smart Explanations Grade Level */}
             <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Archive Assignment</p>
+              <div className="flex-1">
+                <p className="font-medium flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-violet-500">
+                    <path d="M12 2v4" />
+                    <path d="m6.343 6.343 2.829 2.829" />
+                    <path d="M2 12h4" />
+                    <path d="m6.343 17.657 2.829-2.829" />
+                    <path d="M12 18v4" />
+                    <path d="m17.657 17.657-2.829-2.829" />
+                    <path d="M18 12h4" />
+                    <path d="m17.657 6.343-2.829 2.829" />
+                  </svg>
+                  Smart Explanations Grade Level
+                </p>
                 <p className="text-sm text-muted-foreground">
-                  Hide this assignment from your main list
+                  Set the grade level for AI-generated student explanations
+                  {project.grade_level === null && teacherDefaultGradeLevel && (
+                    <span className="text-violet-600"> (using your default: {GRADE_OPTIONS.find(o => o.value === teacherDefaultGradeLevel)?.label || teacherDefaultGradeLevel})</span>
+                  )}
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleArchiveToggle}
-                disabled={saving}
-              >
-                {project.is_archived ? 'Restore' : 'Archive'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={project.grade_level || teacherDefaultGradeLevel || '6'}
+                  onChange={(e) => handleAssignmentGradeLevelChange(e.target.value)}
+                  disabled={gradeLevelSaving}
+                  className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {GRADE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {gradeLevelSaving && (
+                  <svg className="animate-spin h-4 w-4 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Archive Assignment</p>
+                  <p className="text-sm text-muted-foreground">
+                    Hide this assignment from your main list
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleArchiveToggle}
+                  disabled={saving}
+                >
+                  {project.is_archived ? 'Restore' : 'Archive'}
+                </Button>
+              </div>
             </div>
 
             <div className="border-t pt-4">

@@ -26,6 +26,7 @@ export interface UserSubscription {
   current_period_start: string;
   current_period_end: string;
   cancel_at_period_end: boolean;
+  has_smart_explanations: boolean;
   plan?: SubscriptionPlan;
 }
 
@@ -354,6 +355,34 @@ export async function openCustomerPortal(): Promise<string | null> {
     return data.url;
   } catch (error) {
     console.error('Failed to open customer portal:', error);
+    return null;
+  }
+}
+
+/**
+ * Create Stripe checkout for add-on subscription
+ * Returns the checkout URL to redirect to
+ */
+export async function createAddonCheckout(addonId: string): Promise<string | null> {
+  try {
+    const response = await fetch('/api/stripe/addon', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ addonId }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Add-on checkout error:', error);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.url;
+  } catch (error) {
+    console.error('Failed to create add-on checkout:', error);
     return null;
   }
 }

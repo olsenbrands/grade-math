@@ -35,7 +35,16 @@ export async function GET(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: 'No result found' }, { status: 404 });
     }
 
-    return NextResponse.json(result);
+    // Return with a consistent shape for the frontend
+    return NextResponse.json({
+      resultId: result.id,
+      questionsJson: result.questionsJson,
+      needsReview: result.needsReview,
+      reviewReason: result.reviewReason,
+      provider: result.provider,
+      model: result.model,
+      processingTimeMs: result.processingTimeMs,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },

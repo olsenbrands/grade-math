@@ -19,6 +19,7 @@ import {
   type SubmissionWithDetails,
   type SubmissionFilters,
 } from '@/lib/services/submissions';
+import { createClient } from '@/lib/supabase/client';
 import { getStudents } from '@/lib/services/students';
 import type { Student, SubmissionStatus } from '@/types/database';
 import {
@@ -27,6 +28,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { DiagramRenderer } from '@/components/diagrams';
 
 export interface BatchGradingStatus {
   currentId: string | null;
@@ -72,9 +74,26 @@ interface QuestionDetail {
   mathpixUsed?: boolean;
   mathpixLatex?: string;
   mathpixText?: string;
+  // Smart Explanations
+  explanation?: {
+    gradeLevel: string;
+    methodology?: string;
+    steps: string[];
+    whatYouDidRight: string | null;
+    whatToImprove: string | null;
+    encouragement: string | null;
+    generatedAt: string;
+    // Visual diagram data
+    diagram?: {
+      type: 'bar-model' | 'number-line' | 'fraction-visual' | 'array-grid';
+      data: Record<string, unknown>;
+      textFallback: string;
+    } | null;
+  } | null;
 }
 
 interface GradingResultDetail {
+  resultId: string;
   questionsJson: QuestionDetail[];
   needsReview: boolean;
   reviewReason?: string;
@@ -216,10 +235,14 @@ export function SubmissionList({ projectId, onRefresh, batchGradingStatus }: Sub
   const [gradingError, setGradingError] = useState<string | null>(null);
   const [gradingResults, setGradingResults] = useState<Record<string, GradingResultDetail | null>>({});
   const [loadingResult, setLoadingResult] = useState<string | null>(null);
+  const [generatingExplanations, setGeneratingExplanations] = useState<string | null>(null);
+  const [explanationError, setExplanationError] = useState<string | null>(null);
+  const [expandedExplanations, setExpandedExplanations] = useState<Set<number>>(new Set());
+  const [hasSmartExplanations, setHasSmartExplanations] = useState<boolean | null>(null);
 
   // Fetch grading result details for a submission
-  const fetchGradingResult = useCallback(async (submissionId: string) => {
-    if (gradingResults[submissionId] !== undefined) return; // Already fetched or loading
+  const fetchGradingResult = useCallback(async (submissionId: string, force = false) => {
+    if (!force && gradingResults[submissionId] !== undefined) return; // Already fetched or loading
 
     try {
       setLoadingResult(submissionId);
@@ -280,6 +303,75 @@ export function SubmissionList({ projectId, onRefresh, batchGradingStatus }: Sub
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Check if user has Smart Explanations add-on
+  useEffect(() => {
+    async function checkSmartExplanations() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setHasSmartExplanations(false);
+          return;
+        }
+
+        const { data } = await supabase
+          .from('user_subscriptions')
+          .select('has_smart_explanations')
+          .eq('user_id', user.id)
+          .single();
+
+        setHasSmartExplanations(data?.has_smart_explanations === true);
+      } catch {
+        setHasSmartExplanations(false);
+      }
+    }
+    checkSmartExplanations();
+  }, []);
+
+  // Generate explanations for a graded result
+  const handleGenerateExplanations = useCallback(async (resultId: string, submissionId: string) => {
+    try {
+      setGeneratingExplanations(resultId);
+      setExplanationError(null);
+
+      const response = await fetch('/api/explanations/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resultId }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        if (data.code === 'ADDON_REQUIRED') {
+          setExplanationError('Smart Explanations add-on required. Upgrade in Settings.');
+          return;
+        }
+        throw new Error(data.error || 'Failed to generate explanations');
+      }
+
+      // Force refetch to get the updated result with explanations
+      await fetchGradingResult(submissionId, true);
+
+    } catch (err) {
+      console.error('Failed to generate explanations:', err);
+      setExplanationError(err instanceof Error ? err.message : 'Failed to generate explanations');
+    } finally {
+      setGeneratingExplanations(null);
+    }
+  }, [fetchGradingResult]);
+
+  const toggleExplanation = (questionNumber: number) => {
+    setExpandedExplanations(prev => {
+      const next = new Set(prev);
+      if (next.has(questionNumber)) {
+        next.delete(questionNumber);
+      } else {
+        next.add(questionNumber);
+      }
+      return next;
+    });
+  };
 
   const toggleSelectForDelete = (id: string) => {
     setSelectedForDelete(prev => {
@@ -739,6 +831,90 @@ export function SubmissionList({ projectId, onRefresh, batchGradingStatus }: Sub
                                               : 'AI wasn\'t sure about this answer - please verify'}
                                         </div>
                                       )}
+
+                                      {/* Smart Explanation - Expandable */}
+                                      {q.explanation && (
+                                        <div className="mt-2">
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              toggleExplanation(q.questionNumber);
+                                            }}
+                                            className="flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 hover:underline"
+                                          >
+                                            <svg
+                                              xmlns="http://www.w3.org/2000/svg"
+                                              viewBox="0 0 24 24"
+                                              fill="none"
+                                              stroke="currentColor"
+                                              strokeWidth="2"
+                                              strokeLinecap="round"
+                                              strokeLinejoin="round"
+                                              className={`h-3 w-3 transition-transform ${expandedExplanations.has(q.questionNumber) ? 'rotate-90' : ''}`}
+                                            >
+                                              <polyline points="9 18 15 12 9 6" />
+                                            </svg>
+                                            {expandedExplanations.has(q.questionNumber) ? 'Hide' : 'Show'} Student Explanation
+                                          </button>
+
+                                          {expandedExplanations.has(q.questionNumber) && (
+                                            <div className="mt-2 p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg text-sm space-y-2">
+                                              {/* Steps */}
+                                              {q.explanation.steps && q.explanation.steps.length > 0 && (
+                                                <div>
+                                                  <p className="font-medium text-violet-800 dark:text-violet-200 mb-1">How to solve this:</p>
+                                                  <ol className="list-decimal list-inside space-y-1 text-violet-700 dark:text-violet-300">
+                                                    {q.explanation.steps.map((step, idx) => (
+                                                      <li key={idx}>{step}</li>
+                                                    ))}
+                                                  </ol>
+                                                </div>
+                                              )}
+
+                                              {/* Visual Diagram */}
+                                              {q.explanation.diagram && (
+                                                <DiagramRenderer
+                                                  diagram={q.explanation.diagram as unknown as Parameters<typeof DiagramRenderer>[0]['diagram']}
+                                                  className="my-3"
+                                                />
+                                              )}
+
+                                              {/* What they did right */}
+                                              {q.explanation.whatYouDidRight && (
+                                                <div className="flex items-start gap-2">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5">
+                                                    <path d="M20 6 9 17l-5-5" />
+                                                  </svg>
+                                                  <p className="text-green-700 dark:text-green-400">{q.explanation.whatYouDidRight}</p>
+                                                </div>
+                                              )}
+
+                                              {/* What to improve */}
+                                              {q.explanation.whatToImprove && (
+                                                <div className="flex items-start gap-2">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-orange-600 flex-shrink-0 mt-0.5">
+                                                    <circle cx="12" cy="12" r="10" />
+                                                    <line x1="12" y1="8" x2="12" y2="12" />
+                                                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                                                  </svg>
+                                                  <p className="text-orange-700 dark:text-orange-400">{q.explanation.whatToImprove}</p>
+                                                </div>
+                                              )}
+
+                                              {/* Encouragement */}
+                                              {q.explanation.encouragement && (
+                                                <p className="text-violet-600 dark:text-violet-400 italic border-t border-violet-200 dark:border-violet-700 pt-2 mt-2">
+                                                  {q.explanation.encouragement}
+                                                </p>
+                                              )}
+
+                                              <p className="text-xs text-muted-foreground">
+                                                Grade level: {q.explanation.gradeLevel}
+                                              </p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
 
                                     {/* AI Services & Points */}
@@ -772,6 +948,105 @@ export function SubmissionList({ projectId, onRefresh, batchGradingStatus }: Sub
                                       </p>
                                     </div>
                                   </div>
+                                </div>
+                              )}
+
+                              {/* Smart Explanations Section */}
+                              {gradingResults[submission.id]?.resultId && (
+                                <div className="border-t pt-3 mt-3">
+                                  {/* Check if any explanations exist */}
+                                  {gradingResults[submission.id]!.questionsJson.some(q => q.explanation) ? (
+                                    <div className="flex items-center gap-2 text-sm text-violet-600 dark:text-violet-400">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                                        <path d="M20 6 9 17l-5-5" />
+                                      </svg>
+                                      <span>Smart Explanations available - click &quot;Show Student Explanation&quot; on any question</span>
+                                    </div>
+                                  ) : hasSmartExplanations ? (
+                                    <div className="flex items-center gap-3">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-900/20"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleGenerateExplanations(gradingResults[submission.id]!.resultId, submission.id);
+                                        }}
+                                        disabled={generatingExplanations === gradingResults[submission.id]!.resultId}
+                                      >
+                                        {generatingExplanations === gradingResults[submission.id]!.resultId ? (
+                                          <>
+                                            <svg
+                                              className="animate-spin -ml-1 mr-2 h-4 w-4"
+                                              xmlns="http://www.w3.org/2000/svg"
+                                              fill="none"
+                                              viewBox="0 0 24 24"
+                                            >
+                                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                            </svg>
+                                            Generating...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 mr-1">
+                                              <path d="M12 2v4" />
+                                              <path d="m6.343 6.343 2.829 2.829" />
+                                              <path d="M2 12h4" />
+                                              <path d="m6.343 17.657 2.829-2.829" />
+                                              <path d="M12 18v4" />
+                                              <path d="m17.657 17.657-2.829-2.829" />
+                                              <path d="M18 12h4" />
+                                              <path d="m17.657 6.343-2.829 2.829" />
+                                            </svg>
+                                            Generate Explanations
+                                          </>
+                                        )}
+                                      </Button>
+                                      <span className="text-xs text-muted-foreground">
+                                        Create age-appropriate feedback for students
+                                      </span>
+                                    </div>
+                                  ) : hasSmartExplanations === false ? (
+                                    <div className="flex items-center gap-2 p-2 bg-violet-50 dark:bg-violet-900/20 rounded-lg border border-violet-200 dark:border-violet-800">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-violet-600 flex-shrink-0">
+                                        <path d="M12 2v4" />
+                                        <path d="m6.343 6.343 2.829 2.829" />
+                                        <path d="M2 12h4" />
+                                        <path d="m6.343 17.657 2.829-2.829" />
+                                        <path d="M12 18v4" />
+                                        <path d="m17.657 17.657-2.829-2.829" />
+                                        <path d="M18 12h4" />
+                                        <path d="m17.657 6.343-2.829 2.829" />
+                                      </svg>
+                                      <div className="flex-1">
+                                        <p className="text-sm text-violet-800 dark:text-violet-200 font-medium">
+                                          Want Smart Explanations?
+                                        </p>
+                                        <p className="text-xs text-violet-600 dark:text-violet-400">
+                                          Add the $5/mo add-on to generate grade-appropriate student feedback
+                                        </p>
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="border-violet-300 text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:text-violet-400"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          window.location.href = '/settings';
+                                        }}
+                                      >
+                                        Upgrade
+                                      </Button>
+                                    </div>
+                                  ) : null}
+
+                                  {/* Explanation Error */}
+                                  {explanationError && (
+                                    <div className="mt-2 p-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded-md">
+                                      {explanationError}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>

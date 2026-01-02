@@ -43,6 +43,11 @@ const PRICE_TO_PLAN: Record<string, string> = {
   [process.env.STRIPE_PRICE_HEAVY || '']: 'heavy',
 };
 
+// Map Stripe price IDs to add-on IDs
+const PRICE_TO_ADDON: Record<string, string> = {
+  [process.env.STRIPE_PRICE_SMART_EXPLANATIONS || '']: 'smart_explanations',
+};
+
 export async function POST(request: NextRequest) {
   const body = await request.text();
   const signature = request.headers.get('stripe-signature');
@@ -116,19 +121,38 @@ export async function POST(request: NextRequest) {
 }
 
 async function handleSubscriptionCheckout(session: Stripe.Checkout.Session) {
-  const userId = session.metadata?.supabase_user_id;
   const customerId = session.customer as string;
   const subscriptionId = session.subscription as string;
+
+  // Get subscription details - cast to extended type that includes period properties
+  const subscription = (await stripe.subscriptions.retrieve(subscriptionId)) as unknown as SubscriptionWithPeriod;
+
+  // Get userId from subscription metadata (more reliable than session metadata for add-ons)
+  const userId = subscription.metadata?.supabase_user_id || session.metadata?.supabase_user_id;
+  const isAddon = subscription.metadata?.is_addon === 'true';
+  const addonId = subscription.metadata?.addon_id;
 
   if (!userId) {
     console.error('No user ID in checkout session metadata');
     return;
   }
 
-  // Get subscription details - cast to extended type that includes period properties
-  const subscription = (await stripe.subscriptions.retrieve(subscriptionId)) as unknown as SubscriptionWithPeriod;
-
   const priceId = subscription.items.data[0]?.price.id;
+
+  // Check if this is an add-on subscription
+  if (isAddon && addonId) {
+    await handleAddonCheckout(userId, customerId, subscriptionId, addonId, subscription);
+    return;
+  }
+
+  // Also check by price ID if metadata wasn't set
+  const addonFromPrice = priceId ? PRICE_TO_ADDON[priceId] : null;
+  if (addonFromPrice) {
+    await handleAddonCheckout(userId, customerId, subscriptionId, addonFromPrice, subscription);
+    return;
+  }
+
+  // Regular plan subscription
   const planId = (priceId ? PRICE_TO_PLAN[priceId] : null) || session.metadata?.plan_id || 'starter';
 
   // Update user subscription
@@ -147,6 +171,32 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session) {
     .eq('user_id', userId);
 
   console.log(`Subscription checkout completed for user ${userId}, plan: ${planId}`);
+}
+
+async function handleAddonCheckout(
+  userId: string,
+  customerId: string,
+  subscriptionId: string,
+  addonId: string,
+  subscription: SubscriptionWithPeriod
+) {
+  // Handle add-on specific logic
+  if (addonId === 'smart_explanations') {
+    await getSupabaseAdmin()
+      .from('user_subscriptions')
+      .update({
+        has_smart_explanations: true,
+        stripe_customer_id: customerId, // Update customer ID if not set
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+
+    console.log(`Smart Explanations add-on activated for user ${userId}`);
+  }
+
+  // Store add-on subscription ID for future management
+  // Note: Consider adding a separate table for add-on subscriptions if managing multiple add-ons
+  console.log(`Add-on checkout completed: ${addonId} for user ${userId}, subscription: ${subscriptionId}`);
 }
 
 async function handleOveragePurchase(session: Stripe.Checkout.Session) {
@@ -220,6 +270,22 @@ async function handleSubscriptionUpdate(subscriptionObj: Stripe.Subscription) {
   }
 
   const priceId = subscription.items.data[0]?.price.id;
+
+  // Check if this is an add-on subscription
+  const addonId = priceId ? PRICE_TO_ADDON[priceId] : null;
+  const isAddon = subscription.metadata?.is_addon === 'true' || !!addonId;
+
+  if (isAddon) {
+    // Handle add-on update (e.g., cancellation scheduled)
+    const addonType = addonId || subscription.metadata?.addon_id;
+    if (addonType === 'smart_explanations') {
+      // If subscription is canceled or set to cancel, we might want to update the flag
+      // For now, keep it active until actual cancellation
+      console.log(`Add-on subscription updated for user ${userSub.user_id}, addon: ${addonType}, cancel_at_period_end: ${subscription.cancel_at_period_end}`);
+    }
+    return;
+  }
+
   const planId = (priceId ? PRICE_TO_PLAN[priceId] : null) || 'starter';
 
   // Map Stripe status to our status
@@ -246,6 +312,7 @@ async function handleSubscriptionUpdate(subscriptionObj: Stripe.Subscription) {
 
 async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
   const customerId = subscription.customer as string;
+  const priceId = subscription.items.data[0]?.price.id;
 
   const { data: userSub } = await getSupabaseAdmin()
     .from('user_subscriptions')
@@ -254,6 +321,27 @@ async function handleSubscriptionCanceled(subscription: Stripe.Subscription) {
     .single();
 
   if (!userSub) return;
+
+  // Check if this is an add-on subscription
+  const addonId = priceId ? PRICE_TO_ADDON[priceId] : null;
+  const isAddon = subscription.metadata?.is_addon === 'true' || !!addonId;
+
+  if (isAddon) {
+    // Handle add-on cancellation
+    const addonType = addonId || subscription.metadata?.addon_id;
+    if (addonType === 'smart_explanations') {
+      await getSupabaseAdmin()
+        .from('user_subscriptions')
+        .update({
+          has_smart_explanations: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', userSub.user_id);
+
+      console.log(`Smart Explanations add-on canceled for user ${userSub.user_id}`);
+    }
+    return;
+  }
 
   // Revert to free plan
   await getSupabaseAdmin()

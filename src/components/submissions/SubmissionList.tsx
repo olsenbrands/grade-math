@@ -68,6 +68,10 @@ interface QuestionDetail {
   wolframVerified?: boolean;
   verificationConflict?: boolean;
   hasReadingConflict?: boolean;
+  // Service usage tracking
+  mathpixUsed?: boolean;
+  mathpixLatex?: string;
+  mathpixText?: string;
 }
 
 interface GradingResultDetail {
@@ -80,124 +84,113 @@ interface GradingResultDetail {
 }
 
 /**
- * Calculate combined confidence from multiple AI signals
+ * Determine which AI services were used for this question
  */
-function calculateCombinedConfidence(question: QuestionDetail): {
-  score: number;
-  dots: number;
-  breakdown: { label: string; value: number }[];
+function getServicesUsed(question: QuestionDetail): {
+  mathpix: boolean;
+  vision: boolean;
+  wolfram: boolean;
 } {
-  const breakdown: { label: string; value: number }[] = [];
-  let weightedSum = 0;
+  // Mathpix: used if we have mathpixLatex/mathpixText or explicit flag
+  const mathpix = !!(question.mathpixUsed || question.mathpixLatex || question.mathpixText);
 
-  // OCR confidence (reading the problem) - 30%
-  const ocrConf = question.ocrConfidence ?? question.confidence;
-  breakdown.push({ label: 'Reading', value: ocrConf });
-  weightedSum += ocrConf * 0.3;
+  // Vision (GPT-4o): always used for grading currently
+  const vision = true;
 
-  // Solving confidence - 40%
-  const solveConf = question.confidence;
-  breakdown.push({ label: 'Solving', value: solveConf });
-  weightedSum += solveConf * 0.4;
+  // Wolfram: used if verification method is wolfram
+  const wolfram = question.verificationMethod === 'wolfram';
 
-  // Verification confidence - 30%
-  let verifyConf = 0.7;
-  if (question.verificationMethod === 'wolfram') {
-    verifyConf = question.wolframVerified ? 0.98 : 0.5;
-  } else if (question.verificationMethod === 'chain_of_thought') {
-    verifyConf = question.verificationConflict ? 0.6 : 0.85;
-  }
-  breakdown.push({ label: 'Verified', value: verifyConf });
-  weightedSum += verifyConf * 0.3;
-
-  const score = weightedSum;
-
-  // Calculate dots (1-3) based on agreement/confidence
-  let dots = 3;
-  if (question.hasReadingConflict) dots = 1;
-  else if (question.verificationConflict) dots = 2;
-  else if (score < 0.7) dots = 2;
-  else if (score < 0.5) dots = 1;
-
-  return { score, dots, breakdown };
+  return { mathpix, vision, wolfram };
 }
 
 /**
- * Confidence indicator - only shows when there's something to flag
- * High confidence questions don't need an indicator (reduces noise)
+ * AI Services indicator - shows which services were used with colored dots
+ *
+ * Dot 1 (OCR):     Green = Mathpix used, Gray = Vision only
+ * Dot 2 (Solving): Always green (GPT-4o always used)
+ * Dot 3 (Verify):  Blue = Wolfram used, Gray = No verification
+ *
+ * Yellow/Orange dots indicate issues or conflicts
  */
-function ConfidenceIndicator({ question }: { question: QuestionDetail }) {
-  const { score, dots, breakdown } = calculateCombinedConfidence(question);
-  const percentage = Math.round(score * 100);
+function AIServicesIndicator({ question }: { question: QuestionDetail }) {
+  const services = getServicesUsed(question);
+  const hasConflict = question.hasReadingConflict || question.verificationConflict;
+  const hasIssue = question.readabilityIssue || (question.confidence < 0.7);
 
-  // Option 3: Only show when confidence is below 90% or there's a conflict
-  // High confidence = don't distract the teacher with unnecessary indicators
-  const hasIssue = percentage < 90 ||
-                   question.hasReadingConflict ||
-                   question.verificationConflict ||
-                   question.readabilityIssue;
+  // Determine colors for each dot
+  // Dot 1: OCR - Mathpix (bright green) vs Vision-only (light green)
+  const dot1Color = hasConflict
+    ? 'text-orange-500'
+    : services.mathpix
+      ? 'text-emerald-500'  // Bright green = Mathpix
+      : 'text-green-300';   // Light green = Vision only
 
-  if (!hasIssue) {
-    // Everything looks good - no indicator needed
-    return null;
-  }
+  // Dot 2: Solving - Always Vision (green), yellow if low confidence
+  const dot2Color = hasIssue
+    ? 'text-yellow-500'
+    : 'text-green-500';
 
-  const getColor = (pct: number) => {
-    if (pct >= 90) return 'text-green-600';
-    if (pct >= 70) return 'text-yellow-600';
-    return 'text-orange-500';
-  };
-
-  const getDotColor = (filled: boolean, pct: number) => {
-    if (!filled) return 'text-gray-300';
-    if (pct >= 90) return 'text-green-500';
-    if (pct >= 70) return 'text-yellow-500';
-    return 'text-orange-500';
-  };
+  // Dot 3: Verification - Wolfram (blue) vs None (gray)
+  const dot3Color = question.verificationConflict
+    ? 'text-orange-500'
+    : services.wolfram
+      ? 'text-blue-500'     // Blue = Wolfram verified
+      : 'text-gray-300';    // Gray = No verification
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex items-center gap-1.5 cursor-help">
-            <div className="flex gap-0.5">
-              {[1, 2, 3].map((i) => (
-                <span
-                  key={i}
-                  className={`text-sm ${getDotColor(i <= dots, percentage)}`}
-                >
-                  {i <= dots ? '\u25CF' : '\u25CB'}
-                </span>
-              ))}
-            </div>
-            <span className={`text-xs font-medium ${getColor(percentage)}`}>
-              {percentage}%
-            </span>
+          <div className="flex items-center gap-0.5 cursor-help">
+            <span className={`text-sm ${dot1Color}`}>{'\u25CF'}</span>
+            <span className={`text-sm ${dot2Color}`}>{'\u25CF'}</span>
+            <span className={`text-sm ${dot3Color}`}>{services.wolfram ? '\u25CF' : '\u25CB'}</span>
           </div>
         </TooltipTrigger>
-        <TooltipContent side="left" className="w-48">
+        <TooltipContent side="left" className="w-56">
           <div className="space-y-2">
-            <p className="font-medium text-xs">Confidence Breakdown</p>
-            {breakdown.map((item, i) => (
-              <div key={i} className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">{item.label}</span>
-                <div className="flex items-center gap-2">
-                  <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${
-                        item.value >= 0.9 ? 'bg-green-500' :
-                        item.value >= 0.7 ? 'bg-yellow-500' : 'bg-orange-500'
-                      }`}
-                      style={{ width: `${item.value * 100}%` }}
-                    />
-                  </div>
-                  <span className="w-8 text-right">{Math.round(item.value * 100)}%</span>
-                </div>
+            <p className="font-medium text-xs border-b pb-1">AI Services Used</p>
+
+            {/* OCR Service */}
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className={`${dot1Color}`}>{'\u25CF'}</span>
+                <span>Reading</span>
               </div>
-            ))}
-            {question.hasReadingConflict && (
+              <span className={services.mathpix ? 'text-emerald-600 font-medium' : 'text-muted-foreground'}>
+                {services.mathpix ? 'Mathpix OCR' : 'Vision Only'}
+              </span>
+            </div>
+
+            {/* Solving Service */}
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className={`${dot2Color}`}>{'\u25CF'}</span>
+                <span>Solving</span>
+              </div>
+              <span className="text-green-600 font-medium">Active</span>
+            </div>
+
+            {/* Verification Service */}
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className={`${dot3Color}`}>{services.wolfram ? '\u25CF' : '\u25CB'}</span>
+                <span>Verified</span>
+              </div>
+              <span className={services.wolfram ? 'text-blue-600 font-medium' : 'text-muted-foreground'}>
+                {services.wolfram ? 'Wolfram' : 'Not used'}
+              </span>
+            </div>
+
+            {/* Warnings */}
+            {hasConflict && (
               <p className="text-xs text-orange-600 pt-1 border-t">
-                Multiple interpretations detected
+                AI disagreement detected - review recommended
+              </p>
+            )}
+            {hasIssue && !hasConflict && (
+              <p className="text-xs text-yellow-600 pt-1 border-t">
+                Low confidence - may need review
               </p>
             )}
           </div>
@@ -748,9 +741,9 @@ export function SubmissionList({ projectId, onRefresh, batchGradingStatus }: Sub
                                       )}
                                     </div>
 
-                                    {/* Confidence & Points */}
+                                    {/* AI Services & Points */}
                                     <div className="flex items-center gap-3">
-                                      <ConfidenceIndicator question={q} />
+                                      <AIServicesIndicator question={q} />
                                       <div className="text-right">
                                         <div className={`text-lg font-bold ${
                                           q.isCorrect ? 'text-green-600' : q.studentAnswer === null ? 'text-yellow-600' : 'text-red-600'

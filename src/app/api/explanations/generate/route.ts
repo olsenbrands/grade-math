@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fetch the graded result with project grade level, methodology, and image URL
+    // Fetch the graded result with project grade level, methodology, and storage path for image
     const { data: result, error: resultError } = await supabase
       .from('graded_results')
       .select(
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
         id,
         questions_json,
         submission:submissions!inner(
-          image_url,
+          storage_path,
           project:projects!inner(user_id, grade_level, teaching_methodology)
         )
       `
@@ -79,6 +79,7 @@ export async function POST(request: Request) {
       .single();
 
     if (resultError || !result) {
+      console.error('[EXPLANATION] Query error:', resultError);
       return NextResponse.json(
         { error: 'Graded result not found' },
         { status: 404 }
@@ -87,7 +88,7 @@ export async function POST(request: Request) {
 
     // Verify ownership - submission is a single object due to !inner join
     const submission = result.submission as unknown as {
-      image_url: string | null;
+      storage_path: string | null;
       project: {
         user_id: string;
         grade_level: string | null;
@@ -95,7 +96,15 @@ export async function POST(request: Request) {
       }
     } | null;
     const projectUserId = submission?.project?.user_id;
-    const imageUrl = submission?.image_url;
+
+    // Generate signed URL from storage_path if available
+    let imageUrl: string | undefined;
+    if (submission?.storage_path) {
+      const { data: signedUrlData } = await supabase.storage
+        .from('submissions')
+        .createSignedUrl(submission.storage_path, 3600); // 1 hour expiry
+      imageUrl = signedUrlData?.signedUrl;
+    }
     if (projectUserId !== user.id) {
       return NextResponse.json(
         { error: 'Access denied' },

@@ -262,7 +262,8 @@ IMPORTANT:
 - Match the tone and vocabulary to ${gradeBand} grade level
 - USE THE ${methodologyName.toUpperCase()} METHODOLOGY'S techniques and language style
 - Keep each step concise but clear
-- ONLY include a diagram when it genuinely helps understanding
+- INCLUDE A DIAGRAM for word problems, fractions, multiplication, and visual math concepts
+- If you mention "draw a bar" or "picture" in your steps, you MUST include the actual diagram JSON
 - ALWAYS include "textFallback" in every diagram - this is REQUIRED
 `;
 }
@@ -274,10 +275,11 @@ function getDiagramGuidanceForMethodology(methodology: TeachingMethodology): str
   switch (methodology) {
     case 'singapore':
       return `METHODOLOGY DIAGRAM PRIORITY (Singapore Math):
-- ALWAYS use bar-model for word problems involving part-whole relationships
-- Use bar-model for comparison problems (who has more/less)
+- YOU MUST INCLUDE a bar-model diagram for ANY word problem with part-whole relationships
+- YOU MUST INCLUDE a bar-model for comparison problems (who has more/less)
 - Use number-line for addition/subtraction with jumps
-- Bar models are the PRIMARY visual tool for Singapore Math`;
+- Bar models are ESSENTIAL to Singapore Math - always include them for word problems
+- The diagram is NOT optional for Singapore Math word problems`;
 
     case 'common-core':
       return `METHODOLOGY DIAGRAM PRIORITY (Common Core):
@@ -322,12 +324,13 @@ function getDiagramGuidanceForMethodology(methodology: TeachingMethodology): str
 - Diagrams should support deductive understanding`;
 
     default: // 'standard'
-      return `DIAGRAM SELECTION GUIDANCE:
-- Use bar-model for word problems with parts and totals
-- Use number-line for addition, subtraction, or number placement
-- Use fraction-visual for fraction problems
-- Use array-grid for multiplication
-- Only include a diagram if it genuinely helps understanding`;
+      return `DIAGRAM SELECTION GUIDANCE (INCLUDE DIAGRAMS WHEN HELPFUL):
+- INCLUDE bar-model for word problems with parts, totals, or comparisons
+- INCLUDE number-line for addition, subtraction, or number placement
+- INCLUDE fraction-visual for fraction problems
+- INCLUDE array-grid for multiplication
+- If the problem involves quantities, parts, or visual relationships, INCLUDE a diagram
+- The pastry/muffin/donut type problem REQUIRES a bar-model diagram`;
   }
 }
 

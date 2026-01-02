@@ -601,37 +601,43 @@ ${prompt}`,
             const rawDiagram = exp.diagram as Record<string, unknown>;
             let diagramData = rawDiagram.data as Record<string, unknown>;
 
-            // POST-PROCESS: Fix total if AI returned a bad value
+            // POST-PROCESS: ALWAYS try to extract total from problem text and use it if better
             const currentTotal = diagramData?.total;
             const problemText = questions[idx]?.problemText || '';
-            console.log(`[EXPLANATION] Q${idx + 1} diagram total: ${currentTotal} (type: ${typeof currentTotal}), problemText: "${problemText.substring(0, 100)}"`);
+            console.log(`[EXPLANATION] Q${idx + 1} AI returned total: ${currentTotal} (type: ${typeof currentTotal})`);
+            console.log(`[EXPLANATION] Q${idx + 1} problemText: "${problemText}"`);
 
-            // Fix if total is missing, null, undefined, or suspiciously small
-            const needsFix = !currentTotal ||
-                            (typeof currentTotal === 'number' && currentTotal <= 10) ||
-                            currentTotal === null ||
-                            currentTotal === undefined;
+            // Always try to extract the total from problem text
+            const totalPatterns = [
+              /total[^0-9]*=\s*(\d+)/i,           // "total = 170", "total pastries = 170"
+              /=\s*(\d+)/,                         // "... = 170" anywhere
+              /altogether\s+(\d+)/i,               // "altogether 170"
+              /(\d+)\s+in\s+all/i,                 // "170 in all"
+              /total\s+(?:of\s+)?(\d+)/i,          // "total of 170", "total 170"
+            ];
 
-            if (diagramData && needsFix) {
-              const totalPatterns = [
-                /total[^0-9]*=\s*(\d+)/i,           // "total = 170", "total pastries = 170"
-                /=\s*(\d+)/,                         // "... = 170" anywhere
-                /altogether\s+(\d+)/i,               // "altogether 170"
-                /(\d+)\s+in\s+all/i,                 // "170 in all"
-                /total\s+(?:of\s+)?(\d+)/i,          // "total of 170", "total 170"
-                /(\d{2,})/,                          // Any 2+ digit number as last resort
-              ];
-
-              for (const pattern of totalPatterns) {
-                const match = problemText.match(pattern);
-                if (match && match[1]) {
-                  const extractedTotal = parseInt(match[1], 10);
-                  if (extractedTotal > 10) {
-                    console.log(`[EXPLANATION] Fixed total: ${currentTotal} -> ${extractedTotal} (pattern: ${pattern})`);
-                    diagramData = { ...diagramData, total: extractedTotal };
-                    break;
-                  }
+            let extractedTotal: number | null = null;
+            for (const pattern of totalPatterns) {
+              const match = problemText.match(pattern);
+              if (match && match[1]) {
+                const parsed = parseInt(match[1], 10);
+                if (parsed > 10) {
+                  extractedTotal = parsed;
+                  console.log(`[EXPLANATION] Q${idx + 1} extracted total from text: ${extractedTotal} (pattern: ${pattern})`);
+                  break;
                 }
+              }
+            }
+
+            // Use extracted total if:
+            // 1. AI total is missing/null/undefined, OR
+            // 2. AI total is suspiciously small (<= 10), OR
+            // 3. Extracted total is larger and more likely correct
+            const aiTotalNum = typeof currentTotal === 'number' ? currentTotal : 0;
+            if (diagramData && extractedTotal !== null) {
+              if (!currentTotal || aiTotalNum <= 10 || extractedTotal > aiTotalNum) {
+                console.log(`[EXPLANATION] Q${idx + 1} FIXING total: ${currentTotal} -> ${extractedTotal}`);
+                diagramData = { ...diagramData, total: extractedTotal };
               }
             }
 

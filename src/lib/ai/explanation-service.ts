@@ -303,6 +303,8 @@ DIAGRAM RULES:
 - NEVER combine labels like "muffinsscones" - keep them SEPARATE
 - The "parts" array must have one entry per item being added together
 - The diagram should visually match the student's worksheet style when an image is provided
+- CRITICAL: The "total" field MUST contain the actual total from the problem (e.g., 170), NOT 1 or null
+- For part-whole problems, "total" is the sum that all parts add up to
 
 DIAGRAM IS REQUIRED - The example above shows a bar-model. You MUST include a diagram object for word problems. DO NOT use null for diagram when the problem involves quantities or parts.
 

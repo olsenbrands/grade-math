@@ -40,7 +40,21 @@ export function BarModel({ data, textFallback, className }: BarModelProps) {
     typeof p.value === 'number' ? p.value : 0
   );
   const knownTotal = numericParts.reduce((sum, v) => sum + v, 0);
-  const displayTotal = total ?? knownTotal;
+
+  // Determine display total - prefer explicit total, but fallback to knownTotal
+  // Also try to extract from labels.total if total seems wrong (e.g., total=1)
+  let displayTotal = total ?? knownTotal;
+  if (displayTotal <= 1 && labels?.total) {
+    // Try to extract number from labels.total (e.g., "Total: 170" -> 170)
+    const match = labels.total.match(/(\d+)/);
+    if (match && match[1]) {
+      displayTotal = parseInt(match[1], 10);
+    }
+  }
+  // If still suspiciously low but we have parts, estimate from parts
+  if (displayTotal <= 1 && knownTotal > displayTotal) {
+    displayTotal = knownTotal;
+  }
 
   // Calculate widths proportionally
   const getPartWidth = (value: number | '?', idx: number): number => {

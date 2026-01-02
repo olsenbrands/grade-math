@@ -239,7 +239,7 @@ AVAILABLE DIAGRAM TYPES:
      "label": "3 x 4 = 12"
    }
 
-RESPOND IN THIS EXACT JSON FORMAT:
+RESPOND IN THIS EXACT JSON FORMAT (note: diagram is REQUIRED for word problems):
 {
   "explanations": [
     {
@@ -248,14 +248,25 @@ RESPOND IN THIS EXACT JSON FORMAT:
       "whatYouDidRight": "string or null",
       "whatToImprove": "string or null",
       "encouragement": "string",
-      "diagram": null or {
-        "type": "bar-model" | "number-line" | "fraction-visual" | "array-grid",
-        "data": { ... type-specific data ... },
-        "textFallback": "Human-readable description of the visual"
+      "diagram": {
+        "type": "bar-model",
+        "data": {
+          "layout": "part-whole",
+          "total": 170,
+          "parts": [
+            {"value": 6, "label": "muffins"},
+            {"value": 1, "label": "scones"},
+            {"value": "?", "label": "donuts"}
+          ],
+          "unknownIndex": 2
+        },
+        "textFallback": "Bar model showing muffins (6), scones (1), and donuts (?) totaling 170"
       }
     }
   ]
 }
+
+DIAGRAM IS REQUIRED - The example above shows a bar-model. You MUST include a diagram object for word problems. DO NOT use null for diagram when the problem involves quantities or parts.
 
 IMPORTANT:
 - Return ONLY valid JSON, no markdown code blocks

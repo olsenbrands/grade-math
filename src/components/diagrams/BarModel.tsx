@@ -21,11 +21,11 @@ interface BarModelProps {
 }
 
 // SVG dimensions
-const SVG_WIDTH = 400;
-const SVG_HEIGHT = 120;
-const BAR_HEIGHT = 40;
-const BAR_Y = 40;
-const PADDING = 20;
+const SVG_WIDTH = 500;
+const SVG_HEIGHT = 140;
+const BAR_HEIGHT = 45;
+const BAR_Y = 45;
+const PADDING = 25;
 const BAR_WIDTH = SVG_WIDTH - PADDING * 2;
 
 export function BarModel({ data, textFallback, className }: BarModelProps) {
@@ -56,9 +56,11 @@ export function BarModel({ data, textFallback, className }: BarModelProps) {
   const renderPartWholeBar = () => {
     let currentX = PADDING;
     const segments: React.ReactNode[] = [];
+    const GAP = 2; // Small gap between segments for clarity
 
     parts.forEach((part, idx) => {
-      const width = getPartWidth(part.value, idx);
+      const rawWidth = getPartWidth(part.value, idx);
+      const width = Math.max(40, rawWidth - GAP); // Ensure minimum width, account for gap
       const isUnknown = part.value === '?' || idx === unknownIndex;
       const color = part.color || DIAGRAM_COLOR_PALETTE[idx % DIAGRAM_COLOR_PALETTE.length];
 
@@ -112,19 +114,19 @@ export function BarModel({ data, textFallback, className }: BarModelProps) {
             y={BAR_Y + BAR_HEIGHT / 2}
             textAnchor="middle"
             dominantBaseline="middle"
-            className="text-sm font-semibold fill-gray-800 dark:fill-gray-200"
-            style={{ fontSize: '14px' }}
+            className={`font-bold ${isUnknown ? 'fill-amber-600 dark:fill-amber-400' : 'fill-gray-800 dark:fill-gray-200'}`}
+            style={{ fontSize: isUnknown ? '18px' : '14px' }}
           >
             {isUnknown ? '?' : part.value}
           </text>
-          {/* Part label below */}
+          {/* Part label below - positioned to avoid overlap */}
           {part.label && (
             <text
               x={currentX + width / 2}
-              y={BAR_Y + BAR_HEIGHT + 16}
+              y={BAR_Y + BAR_HEIGHT + 20}
               textAnchor="middle"
-              className="text-xs fill-gray-600 dark:fill-gray-400"
-              style={{ fontSize: '11px' }}
+              className="text-xs fill-gray-700 dark:fill-gray-300 font-medium"
+              style={{ fontSize: '12px' }}
             >
               {part.label}
             </text>
@@ -132,7 +134,7 @@ export function BarModel({ data, textFallback, className }: BarModelProps) {
         </g>
       );
 
-      currentX += width;
+      currentX += width + GAP;
     });
 
     return segments;

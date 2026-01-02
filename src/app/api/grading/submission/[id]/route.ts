@@ -64,18 +64,16 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     const projectId = submission.project_id;
 
-    // Get answer key
-    const { data: answerKey, error: akError } = await supabase
+    // Get answer key (optional - AI can grade without it)
+    const { data: answerKey } = await supabase
       .from('project_answer_keys')
       .select('*')
       .eq('project_id', projectId)
       .single();
 
-    if (akError || !answerKey) {
-      return NextResponse.json(
-        { error: 'No answer key found for this project' },
-        { status: 400 }
-      );
+    // Log if no answer key - but don't fail, AI can grade independently
+    if (!answerKey) {
+      console.log(`No answer key for project ${projectId} - AI will grade independently`);
     }
 
     // Get signed URL for image
@@ -94,8 +92,9 @@ export async function POST(request: Request, { params }: RouteParams) {
     // For image uploads, the AI extracts answers and stores them
     // For manual entry, answers are stored directly
     let answers: Array<{ question_number: number; answer: string; points?: number }> = [];
+    let answerKeyData = undefined;
 
-    if (answerKey.answers) {
+    if (answerKey && answerKey.answers) {
       // Check if it's an array of answer objects
       const rawAnswers = answerKey.answers as unknown;
       if (Array.isArray(rawAnswers)) {
@@ -105,18 +104,18 @@ export async function POST(request: Request, { params }: RouteParams) {
           points: a.points ?? 1,
         }));
       }
+      const totalQuestions = answers.length || 5; // Default to 5 if no answers
+      answerKeyData = createAnswerKeyData(answers, totalQuestions);
+      console.log('Answer key data:', JSON.stringify(answerKeyData, null, 2));
+    } else {
+      console.log('No answer key - AI will grade independently');
     }
 
-    const totalQuestions = answers.length || 5; // Default to 5 if no answers
-    const answerKeyData = createAnswerKeyData(answers, totalQuestions);
-
-    console.log('Answer key data:', JSON.stringify(answerKeyData, null, 2));
-
-    // Build request
+    // Build request - answer key is optional
     const gradingRequest: GradingRequest = {
       submissionId,
       image: imageInput,
-      answerKey: answerKeyData,
+      answerKey: answerKeyData, // May be undefined - AI grades independently
       options: {
         generateFeedback: true,
         extractStudentName: true,

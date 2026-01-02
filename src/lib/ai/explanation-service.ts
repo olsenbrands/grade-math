@@ -193,6 +193,12 @@ ${questionsText}
 
 TASK: Generate age-appropriate explanations for each question above using the ${methodologyName} teaching approach.
 
+CRITICAL: Your job is to EXPLAIN HOW TO SOLVE the problem to arrive at the GIVEN correct answer.
+- DO NOT re-interpret or re-solve the problem yourself
+- The "Correct Answer" provided is authoritative - explain how to reach THAT answer
+- If the problem text seems ambiguous, explain the solution that leads to the given correct answer
+- Show the student the method/steps that produce the correct answer we've given you
+
 For each question, provide:
 1. "steps" - Step-by-step solution (array of strings, each step on its own line) - USE THE METHODOLOGY'S APPROACH
 2. "whatYouDidRight" - What the student did correctly (null if nothing notable)

@@ -198,10 +198,11 @@ For each question, provide:
 2. "whatYouDidRight" - What the student did correctly (null if nothing notable)
 3. "whatToImprove" - Specific feedback on what to improve (null if answer was correct)
 4. "encouragement" - Age-appropriate encouragement phrase
-5. "diagram" - Optional visual diagram (null if not helpful, or structured diagram object)
+5. "diagram" - REQUIRED for word problems. Include a structured diagram object to visualize the problem.
 
-VISUAL DIAGRAMS:
-When a visual would help the student understand, include a "diagram" object.
+VISUAL DIAGRAMS - CRITICAL REQUIREMENT:
+For ANY word problem involving quantities, parts, totals, or comparisons, YOU MUST include a diagram.
+DO NOT just describe drawing a bar in text - actually include the diagram JSON object.
 ${diagramGuidance}
 
 AVAILABLE DIAGRAM TYPES:
@@ -501,6 +502,10 @@ export class ExplanationService {
         (exp: Record<string, unknown>, idx: number) => {
           // Parse and validate diagram if present
           let diagram: DiagramData | null = null;
+
+          // Log what the AI returned for diagram
+          console.log(`[EXPLANATION] Q${idx + 1} raw diagram:`, JSON.stringify(exp.diagram));
+
           if (exp.diagram && typeof exp.diagram === 'object') {
             const rawDiagram = exp.diagram as Record<string, unknown>;
             const candidateDiagram: DiagramData = {

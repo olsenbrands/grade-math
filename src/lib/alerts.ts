@@ -72,7 +72,7 @@ class AlertSystem {
    */
   private async sendSlackAlert(alert: Alert): Promise<void> {
     if (!this.config.slackWebhookUrl) {
-      logger.warn('ALERT', 'Slack webhook not configured', { data: alert });
+      logger.warn('ALERT', 'Slack webhook not configured', { data: { ...alert } as Record<string, unknown> });
       return;
     }
 

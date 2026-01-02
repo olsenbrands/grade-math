@@ -48,7 +48,7 @@ const REVIEW_RATE_THRESHOLD = 0.15; // 15%
 class ReviewTracker {
   private entries: ReviewEntry[] = [];
   private windowMinutes: number;
-  private checkInterval: NodeJS.Timer | null = null;
+  private checkInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(windowMinutes: number = 60) {
     this.windowMinutes = windowMinutes;

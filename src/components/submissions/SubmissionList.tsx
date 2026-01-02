@@ -21,6 +21,12 @@ import {
 } from '@/lib/services/submissions';
 import { getStudents } from '@/lib/services/students';
 import type { Student, SubmissionStatus } from '@/types/database';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export interface BatchGradingStatus {
   currentId: string | null;
@@ -56,6 +62,12 @@ interface QuestionDetail {
   readabilityConfidence?: number;
   readabilityIssue?: string | null;
   discrepancy?: string | null;
+  // Multi-AI confidence fields
+  ocrConfidence?: number;
+  verificationMethod?: 'wolfram' | 'chain_of_thought' | 'none';
+  wolframVerified?: boolean;
+  verificationConflict?: boolean;
+  hasReadingConflict?: boolean;
 }
 
 interface GradingResultDetail {
@@ -65,6 +77,121 @@ interface GradingResultDetail {
   provider: string;
   model: string;
   processingTimeMs: number;
+}
+
+/**
+ * Calculate combined confidence from multiple AI signals
+ */
+function calculateCombinedConfidence(question: QuestionDetail): {
+  score: number;
+  dots: number;
+  breakdown: { label: string; value: number }[];
+} {
+  const breakdown: { label: string; value: number }[] = [];
+  let weightedSum = 0;
+
+  // OCR confidence (reading the problem) - 30%
+  const ocrConf = question.ocrConfidence ?? question.confidence;
+  breakdown.push({ label: 'Reading', value: ocrConf });
+  weightedSum += ocrConf * 0.3;
+
+  // Solving confidence - 40%
+  const solveConf = question.confidence;
+  breakdown.push({ label: 'Solving', value: solveConf });
+  weightedSum += solveConf * 0.4;
+
+  // Verification confidence - 30%
+  let verifyConf = 0.7;
+  if (question.verificationMethod === 'wolfram') {
+    verifyConf = question.wolframVerified ? 0.98 : 0.5;
+  } else if (question.verificationMethod === 'chain_of_thought') {
+    verifyConf = question.verificationConflict ? 0.6 : 0.85;
+  }
+  breakdown.push({ label: 'Verified', value: verifyConf });
+  weightedSum += verifyConf * 0.3;
+
+  const score = weightedSum;
+
+  // Calculate dots (1-3) based on agreement/confidence
+  let dots = 3;
+  if (question.hasReadingConflict) dots = 1;
+  else if (question.verificationConflict) dots = 2;
+  else if (score < 0.7) dots = 2;
+  else if (score < 0.5) dots = 1;
+
+  return { score, dots, breakdown };
+}
+
+/**
+ * Confidence indicator with dots and hover tooltip
+ */
+function ConfidenceIndicator({ question }: { question: QuestionDetail }) {
+  const { score, dots, breakdown } = calculateCombinedConfidence(question);
+  const percentage = Math.round(score * 100);
+
+  const getColor = (pct: number) => {
+    if (pct >= 90) return 'text-green-600';
+    if (pct >= 70) return 'text-yellow-600';
+    return 'text-orange-500';
+  };
+
+  const getDotColor = (filled: boolean, pct: number) => {
+    if (!filled) return 'text-gray-300';
+    if (pct >= 90) return 'text-green-500';
+    if (pct >= 70) return 'text-yellow-500';
+    return 'text-orange-500';
+  };
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-1.5 cursor-help">
+            <div className="flex gap-0.5">
+              {[1, 2, 3].map((i) => (
+                <span
+                  key={i}
+                  className={`text-sm ${getDotColor(i <= dots, percentage)}`}
+                >
+                  {i <= dots ? '\u25CF' : '\u25CB'}
+                </span>
+              ))}
+            </div>
+            <span className={`text-xs font-medium ${getColor(percentage)}`}>
+              {percentage}%
+            </span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="left" className="w-48">
+          <div className="space-y-2">
+            <p className="font-medium text-xs">Confidence Breakdown</p>
+            {breakdown.map((item, i) => (
+              <div key={i} className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{item.label}</span>
+                <div className="flex items-center gap-2">
+                  <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        item.value >= 0.9 ? 'bg-green-500' :
+                        item.value >= 0.7 ? 'bg-yellow-500' : 'bg-orange-500'
+                      }`}
+                      style={{ width: `${item.value * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-8 text-right">{Math.round(item.value * 100)}%</span>
+                </div>
+              </div>
+            ))}
+            {question.hasReadingConflict && (
+              <p className="text-xs text-orange-600 pt-1 border-t">
+                Multiple interpretations detected
+              </p>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 export function SubmissionList({ projectId, onRefresh, batchGradingStatus }: SubmissionListProps) {
@@ -608,12 +735,15 @@ export function SubmissionList({ projectId, onRefresh, batchGradingStatus }: Sub
                                       )}
                                     </div>
 
-                                    {/* Points */}
-                                    <div className="text-right">
-                                      <div className={`text-lg font-bold ${
-                                        q.isCorrect ? 'text-green-600' : q.studentAnswer === null ? 'text-yellow-600' : 'text-red-600'
-                                      }`}>
-                                        {q.pointsAwarded}/{q.pointsPossible}
+                                    {/* Confidence & Points */}
+                                    <div className="flex items-center gap-3">
+                                      <ConfidenceIndicator question={q} />
+                                      <div className="text-right">
+                                        <div className={`text-lg font-bold ${
+                                          q.isCorrect ? 'text-green-600' : q.studentAnswer === null ? 'text-yellow-600' : 'text-red-600'
+                                        }`}>
+                                          {q.pointsAwarded}/{q.pointsPossible}
+                                        </div>
                                       </div>
                                     </div>
                                   </div>

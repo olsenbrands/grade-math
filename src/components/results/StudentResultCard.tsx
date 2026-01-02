@@ -331,11 +331,23 @@ function calculateCombinedConfidence(question: QuestionResultData): {
 }
 
 /**
- * Confidence indicator with dots and hover tooltip
+ * Confidence indicator - only shows when there's something to flag
+ * High confidence questions don't need an indicator (reduces noise)
  */
 function ConfidenceIndicator({ question }: { question: QuestionResultData }) {
   const { score, dots, breakdown } = calculateCombinedConfidence(question);
   const percentage = Math.round(score * 100);
+
+  // Only show when confidence is below 90% or there's a conflict
+  // High confidence = don't distract the teacher with unnecessary indicators
+  const hasIssue = percentage < 90 ||
+                   question.hasReadingConflict ||
+                   question.verificationConflict;
+
+  if (!hasIssue) {
+    // Everything looks good - no indicator needed
+    return null;
+  }
 
   // Color based on confidence
   const getColor = (pct: number) => {
@@ -399,7 +411,7 @@ function ConfidenceIndicator({ question }: { question: QuestionResultData }) {
             ))}
             {question.hasReadingConflict && (
               <p className="text-xs text-orange-600 pt-1 border-t">
-                ⚠ Multiple interpretations detected
+                Multiple interpretations detected
               </p>
             )}
           </div>

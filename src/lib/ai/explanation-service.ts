@@ -235,11 +235,16 @@ AVAILABLE DIAGRAM TYPES:
 
 1. "bar-model" - For part-whole relationships, word problems, comparison
    Data schema: {
-     "layout": "part-whole" | "comparison",
+     "layout": "part-whole" | "comparison" | "stacked",
      "total": number | null,
      "parts": [{ "value": number | "?", "label": "string" }],
      "unknownIndex": number (0-indexed, which part is unknown)
    }
+
+   LAYOUT GUIDANCE:
+   - "stacked" (PREFERRED for word problems): Each item on its own horizontal row with label on left, bracket with total on right. Use this for problems like "muffins + scones + donuts = total"
+   - "part-whole": Single horizontal bar divided into segments. Good for simple 2-part problems.
+   - "comparison": Two parallel bars for comparing quantities.
 
 2. "number-line" - For addition, subtraction, number placement, counting
    Data schema: {
@@ -277,7 +282,7 @@ RESPOND IN THIS EXACT JSON FORMAT (note: diagram is REQUIRED for word problems):
       "diagram": {
         "type": "bar-model",
         "data": {
-          "layout": "part-whole",
+          "layout": "stacked",
           "total": 170,
           "parts": [
             {"value": 6, "label": "muffins"},
@@ -286,16 +291,18 @@ RESPOND IN THIS EXACT JSON FORMAT (note: diagram is REQUIRED for word problems):
           ],
           "unknownIndex": 2
         },
-        "textFallback": "Bar model: muffins (6) + scones (1) + donuts (?) = 170 total"
+        "textFallback": "Stacked bars: muffins (6), scones (1), donuts (?) with bracket showing total 170"
       }
     }
   ]
 }
 
 DIAGRAM RULES:
+- Use layout "stacked" for word problems with 3+ items (matches Singapore Math style with rows stacked vertically)
 - Each distinct item (muffins, scones, donuts) gets its OWN part object with its OWN label
 - NEVER combine labels like "muffinsscones" - keep them SEPARATE
 - The "parts" array must have one entry per item being added together
+- The diagram should visually match the student's worksheet style when an image is provided
 
 DIAGRAM IS REQUIRED - The example above shows a bar-model. You MUST include a diagram object for word problems. DO NOT use null for diagram when the problem involves quantities or parts.
 
@@ -319,10 +326,12 @@ function getDiagramGuidanceForMethodology(methodology: TeachingMethodology): str
     case 'singapore':
       return `METHODOLOGY DIAGRAM PRIORITY (Singapore Math):
 - YOU MUST INCLUDE a bar-model diagram for ANY word problem with part-whole relationships
+- For word problems with 3+ items, use layout: "stacked" (rows stacked vertically like the student's worksheet)
 - YOU MUST INCLUDE a bar-model for comparison problems (who has more/less)
 - Use number-line for addition/subtraction with jumps
 - Bar models are ESSENTIAL to Singapore Math - always include them for word problems
-- The diagram is NOT optional for Singapore Math word problems`;
+- The diagram is NOT optional for Singapore Math word problems
+- Match the visual style from the student's worksheet if an image is provided`;
 
     case 'common-core':
       return `METHODOLOGY DIAGRAM PRIORITY (Common Core):

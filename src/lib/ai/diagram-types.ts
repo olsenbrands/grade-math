@@ -29,8 +29,12 @@ export interface BarModelPart {
 }
 
 export interface BarModelData {
-  /** Layout style: part-whole (single bar) or comparison (parallel bars) */
-  layout: 'part-whole' | 'comparison';
+  /** Layout style:
+   * - part-whole: single bar with segments side-by-side
+   * - comparison: two parallel bars for comparing quantities
+   * - stacked: Singapore Math style with each item as a separate row (recommended for word problems)
+   */
+  layout: 'part-whole' | 'comparison' | 'stacked';
   /** Total value (null if unknown/to be calculated) */
   total?: number | null;
   /** The parts that make up the bar(s) */

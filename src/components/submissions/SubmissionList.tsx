@@ -91,14 +91,14 @@ function getServicesUsed(question: QuestionDetail): {
   vision: boolean;
   wolfram: boolean;
 } {
-  // Mathpix: used if we have mathpixLatex/mathpixText or explicit flag
-  const mathpix = !!(question.mathpixUsed || question.mathpixLatex || question.mathpixText);
+  // Mathpix: used if we have ocrConfidence, mathpixLatex/mathpixText, or explicit flag
+  const mathpix = !!(question.ocrConfidence || question.mathpixUsed || question.mathpixLatex || question.mathpixText);
 
   // Vision (GPT-4o): always used for grading currently
   const vision = true;
 
-  // Wolfram: used if verification method is wolfram
-  const wolfram = question.verificationMethod === 'wolfram';
+  // Wolfram: used if verification method is wolfram or wolframVerified is set
+  const wolfram = question.verificationMethod === 'wolfram' || question.wolframVerified === true;
 
   return { mathpix, vision, wolfram };
 }

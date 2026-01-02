@@ -1,11 +1,12 @@
 /**
  * Enhanced AI Grading Service
  *
- * Extends the base grading service with:
- * 1. Mathpix OCR for handwriting recognition
- * 2. Math difficulty classification
- * 3. Multi-layer verification (Wolfram Alpha + Chain-of-Thought)
- * 4. Answer normalization and comparison
+ * Multi-AI Pipeline Architecture:
+ * 1. Mathpix OCR (MANDATORY) - Primary handwriting recognition
+ * 2. GPT-4o Vision - Secondary reading + problem solving
+ * 3. Conflict Detection - Compare Mathpix vs GPT-4o interpretations
+ * 4. Wolfram Alpha - Verify calculations when conflicts detected
+ * 5. Teacher Resolution - Show options when AIs disagree
  *
  * This service provides significantly improved accuracy for:
  * - Complex math problems (algebra, equations)
@@ -29,15 +30,21 @@ import type {
   ImageInput,
   MathDifficulty,
   VerificationMethod,
+  ProblemInterpretation,
 } from './types';
 import { getMathpixProvider } from './providers/mathpix';
+import { getWolframProvider } from './providers/wolfram';
 import { verifyCalculation, type VerificationOptions } from './verification-service';
 import { classifyDifficulty } from './math-classifier';
 import { compareAnswers } from './answer-comparator';
 
 export interface EnhancedGradingOptions {
-  /** Use Mathpix for OCR preprocessing */
-  useMathpix?: boolean;
+  /**
+   * Mathpix is now MANDATORY for reliable math OCR.
+   * This option only controls whether to fail gracefully if Mathpix is unavailable.
+   * @default true (always use Mathpix)
+   */
+  requireMathpix?: boolean;
   /** Enable verification pipeline */
   enableVerification?: boolean;
   /** Force specific verification method */
@@ -50,6 +57,47 @@ export interface EnhancedGradingOptions {
   maxRetries?: number;
   /** Track API costs */
   trackCosts?: boolean;
+}
+
+/**
+ * Normalize problem text for comparison
+ * Removes whitespace, standardizes operators, etc.
+ */
+function normalizeProblemText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/×/g, '*')
+    .replace(/÷/g, '/')
+    .replace(/−/g, '-')
+    .replace(/\(/g, '(')
+    .replace(/\)/g, ')')
+    .trim();
+}
+
+/**
+ * Check if two problem texts are meaningfully different
+ * Returns true if they likely represent different problems
+ */
+function hasReadingConflict(text1: string | undefined, text2: string | undefined): boolean {
+  if (!text1 || !text2) return false;
+
+  const norm1 = normalizeProblemText(text1);
+  const norm2 = normalizeProblemText(text2);
+
+  // If they're identical after normalization, no conflict
+  if (norm1 === norm2) return false;
+
+  // Check for significant differences
+  // Allow minor variations (spacing, parentheses placement)
+  // Flag if numbers or operators are different
+
+  // Extract just numbers and operators for comparison
+  const extractCore = (s: string) => s.replace(/[^0-9+\-*/=ixyz]/gi, '');
+  const core1 = extractCore(norm1);
+  const core2 = extractCore(norm2);
+
+  return core1 !== core2;
 }
 
 /** Cost breakdown for grading operation */
@@ -79,16 +127,17 @@ export interface GradingResultWithCosts extends GradingResultEnhanced {
 export class EnhancedGradingService {
   private manager = getAIProviderManager();
   private mathpix = getMathpixProvider();
+  private wolfram = getWolframProvider();
 
   /**
-   * Grade a submission with enhanced accuracy
+   * Grade a submission with enhanced accuracy using Multi-AI Pipeline
    *
    * Pipeline:
-   * 1. (Optional) Mathpix OCR for better handwriting recognition
-   * 2. AI grading with chain-of-thought calculation
-   * 3. Difficulty classification per problem
-   * 4. Verification based on difficulty (Wolfram or CoT)
-   * 5. Answer comparison and conflict detection
+   * 1. Mathpix OCR (MANDATORY) - Primary handwriting recognition
+   * 2. GPT-4o Vision - Secondary reading + problem solving
+   * 3. Conflict Detection - Compare Mathpix vs GPT-4o interpretations
+   * 4. Wolfram Alpha - Verify when Mathpix and GPT-4o disagree
+   * 5. Teacher Resolution - Show top 2 options when uncertain
    */
   async gradeSubmissionEnhanced(
     request: GradingRequest,
@@ -96,7 +145,7 @@ export class EnhancedGradingService {
   ): Promise<GradingResultWithCosts> {
     const startTime = Date.now();
     const {
-      useMathpix = this.mathpix.isEnabled(),
+      requireMathpix = true,
       enableVerification = true,
       preferredProvider,
       trackCosts = process.env.TRACK_API_COSTS !== 'false',
@@ -111,10 +160,23 @@ export class EnhancedGradingService {
     let verificationTimeMs = 0;
 
     try {
-      // Step 1: Optional Mathpix OCR preprocessing
+      // =========================================================================
+      // Step 1: MANDATORY Mathpix OCR
+      // =========================================================================
       let mathpixData: { latex?: string; text?: string; confidence: number } | null = null;
 
-      if (useMathpix && request.image.type === 'base64') {
+      if (!this.mathpix.isAvailable()) {
+        if (requireMathpix) {
+          return this.createFailedResult(
+            request.submissionId,
+            'Mathpix OCR is required but not configured. Please set MATHPIX_APP_ID and MATHPIX_APP_KEY environment variables.',
+            startTime,
+            preferredProvider || 'openai',
+            'vision'
+          );
+        }
+        console.warn('[GRADING] Mathpix not available, falling back to vision-only mode');
+      } else if (request.image.type === 'base64') {
         const mathpixStart = Date.now();
         const mathpixResult = await this.mathpix.extractMath(
           request.image.data,
@@ -130,10 +192,24 @@ export class EnhancedGradingService {
           };
           // Mathpix cost: $0.004 per image (standard tier)
           mathpixCost = 0.004;
+          console.log(`[MATHPIX] OCR complete: ${mathpixTimeMs}ms, confidence: ${(mathpixResult.confidence * 100).toFixed(1)}%`);
+        } else {
+          console.warn(`[MATHPIX] OCR failed: ${mathpixResult.error}`);
+          if (requireMathpix) {
+            return this.createFailedResult(
+              request.submissionId,
+              `Mathpix OCR failed: ${mathpixResult.error}`,
+              startTime,
+              preferredProvider || 'openai',
+              'vision'
+            );
+          }
         }
       }
 
-      // Step 2: AI Grading (with Mathpix data if available)
+      // =========================================================================
+      // Step 2: GPT-4o Vision Grading (with Mathpix data as reference)
+      // =========================================================================
       const gradingPrompt = this.buildEnhancedGradingPrompt(
         request.answerKey,
         mathpixData
@@ -149,9 +225,9 @@ export class EnhancedGradingService {
       gpt4oTimeMs = Date.now() - gpt4oStart;
 
       // GPT-4o cost estimate: ~$0.015 per image (input + output)
-      // Based on: ~1500 input tokens + ~500 output tokens
       if (response.success) {
         gpt4oCost = 0.015;
+        console.log(`[GPT-4o] Grading complete: ${gpt4oTimeMs}ms`);
       }
 
       if (!response.success) {
@@ -176,18 +252,35 @@ export class EnhancedGradingService {
         );
       }
 
-      // Step 4: Process each question with verification
+      // =========================================================================
+      // Step 4: Process each question with conflict detection and verification
+      // =========================================================================
+      const verificationStart = Date.now();
       const enhancedQuestions: QuestionResultEnhanced[] = await Promise.all(
         parsed.questions.map(async (q) => {
-          return this.processQuestion(q, request, options, response.provider);
+          return this.processQuestionWithConflictDetection(
+            q,
+            request,
+            options,
+            response.provider,
+            mathpixData
+          );
         })
       );
+      verificationTimeMs = Date.now() - verificationStart;
 
-      // Step 5: Calculate overall difficulty and verification stats
+      // =========================================================================
+      // Step 5: Calculate statistics and determine if review is needed
+      // =========================================================================
       const difficulties = enhancedQuestions.map((q) => q.difficultyLevel || 'simple');
       const overallDifficulty = this.getMaxDifficulty(difficulties);
+
+      // Count different types of conflicts
       const verificationConflicts = enhancedQuestions.filter(
         (q) => q.verificationConflict
+      ).length;
+      const readingConflicts = enhancedQuestions.filter(
+        (q) => q.hasReadingConflict
       ).length;
 
       // Step 6: Calculate totals
@@ -203,20 +296,28 @@ export class EnhancedGradingService {
       const needsReview =
         parsed.needsReview ||
         verificationConflicts > 0 ||
+        readingConflicts > 0 ||
         enhancedQuestions.some(
-          (q) => (q.readabilityConfidence ?? 1) < 0.7 || q.verificationConflict
+          (q) => (q.readabilityConfidence ?? 1) < 0.7 || q.verificationConflict || q.hasReadingConflict
         );
 
       let reviewReason = parsed.reviewReason;
-      if (!reviewReason && verificationConflicts > 0) {
-        reviewReason = `${verificationConflicts} question(s) have verification conflicts`;
+      if (!reviewReason) {
+        if (readingConflicts > 0) {
+          reviewReason = `${readingConflicts} question(s) have OCR reading conflicts - teacher verification recommended`;
+        } else if (verificationConflicts > 0) {
+          reviewReason = `${verificationConflicts} question(s) have calculation verification conflicts`;
+        }
       }
 
       // Calculate Wolfram costs based on verification methods used
+      // Count both verification calls and conflict resolution calls
       const wolframQuestions = enhancedQuestions.filter(
         (q) => q.verificationMethod === 'wolfram'
       ).length;
-      wolframCost = wolframQuestions * 0.02; // ~$0.02 per Wolfram query
+      // Each conflict may result in 2 Wolfram calls (one for each interpretation)
+      const conflictWolframCalls = readingConflicts * 2;
+      wolframCost = (wolframQuestions + conflictWolframCalls) * 0.02; // ~$0.02 per Wolfram query
 
       const totalCost = mathpixCost + gpt4oCost + wolframCost;
 
@@ -274,9 +375,14 @@ export class EnhancedGradingService {
   }
 
   /**
-   * Process a single question with verification
+   * Process a single question with multi-AI conflict detection
+   *
+   * This method:
+   * 1. Compares Mathpix reading vs GPT-4o reading
+   * 2. If conflict detected, calls Wolfram to verify
+   * 3. Generates top 2 interpretation options for teacher review
    */
-  private async processQuestion(
+  private async processQuestionWithConflictDetection(
     q: {
       questionNumber: number;
       problemText?: string;
@@ -292,7 +398,8 @@ export class EnhancedGradingService {
     },
     request: GradingRequest,
     options: EnhancedGradingOptions,
-    provider: AIProviderName
+    provider: AIProviderName,
+    mathpixData: { latex?: string; text?: string; confidence: number } | null
   ): Promise<QuestionResultEnhanced> {
     // Look up answer key entry only if answer key exists
     const hasAnswerKey = request.answerKey && request.answerKey.answers.length > 0;
@@ -302,19 +409,78 @@ export class EnhancedGradingService {
 
     const aiAnswer = q.aiAnswer || '';
     const answerKeyValue = answerKeyEntry?.correctAnswer || null;
-    const problemText = q.problemText || '';
+    const gpt4oReading = q.problemText || '';
+
+    // Extract Mathpix reading for this specific question (if available)
+    // Note: Mathpix returns all problems as one block, so we use the full text
+    // In a future enhancement, we could parse individual problems from Mathpix
+    const mathpixReading = mathpixData?.text || undefined;
+    const mathpixLatex = mathpixData?.latex || undefined;
 
     // Classify difficulty
-    const difficultyLevel = classifyDifficulty(problemText);
+    const difficultyLevel = classifyDifficulty(gpt4oReading);
 
-    // Determine verification method
+    // =========================================================================
+    // Conflict Detection: Compare Mathpix vs GPT-4o
+    // =========================================================================
+    const readingConflict = hasReadingConflict(mathpixReading, gpt4oReading);
+
+    // Prepare interpretation options (top 2)
+    let interpretationOptions: ProblemInterpretation[] | undefined;
     let verificationMethod: VerificationMethod = 'none';
     let wolframVerified = false;
     let wolframAnswer: string | undefined;
     let verificationConflict = false;
 
-    // Run verification if enabled and not a simple problem
-    if (options.enableVerification !== false && difficultyLevel !== 'simple' && aiAnswer) {
+    // If there's a conflict between Mathpix and GPT-4o, call Wolfram and prepare options
+    if (readingConflict && this.wolfram.isAvailable()) {
+      console.log(`[CONFLICT] Q${q.questionNumber}: Mathpix vs GPT-4o disagree`);
+      console.log(`  Mathpix: "${mathpixReading?.substring(0, 50)}..."`);
+      console.log(`  GPT-4o:  "${gpt4oReading.substring(0, 50)}..."`);
+
+      // Call Wolfram to verify GPT-4o's calculation
+      const wolframResult = await this.wolfram.solve(gpt4oReading);
+      verificationMethod = 'wolfram';
+
+      if (wolframResult.success && wolframResult.result) {
+        wolframAnswer = wolframResult.result;
+        wolframVerified = compareAnswers(aiAnswer, wolframResult.result).matched;
+        verificationConflict = !wolframVerified;
+
+        console.log(`[WOLFRAM] Result: ${wolframResult.result}, matches AI: ${wolframVerified}`);
+      }
+
+      // Build top 2 interpretation options
+      interpretationOptions = [
+        {
+          problemText: gpt4oReading,
+          source: 'gpt4o' as const,
+          confidence: q.confidence,
+          calculatedAnswer: aiAnswer,
+        },
+      ];
+
+      // Add Mathpix interpretation if different
+      if (mathpixReading && mathpixReading !== gpt4oReading) {
+        // Try to solve Mathpix's interpretation with Wolfram
+        let mathpixAnswer: string | undefined;
+        if (this.wolfram.isAvailable()) {
+          const mathpixWolfram = await this.wolfram.solve(mathpixReading);
+          if (mathpixWolfram.success) {
+            mathpixAnswer = mathpixWolfram.result;
+          }
+        }
+
+        interpretationOptions.push({
+          problemText: mathpixReading,
+          source: 'mathpix' as const,
+          confidence: mathpixData?.confidence || 0.8,
+          calculatedAnswer: mathpixAnswer,
+          latex: mathpixLatex,
+        });
+      }
+    } else if (options.enableVerification !== false && difficultyLevel !== 'simple' && aiAnswer) {
+      // No conflict, but still run verification for complex problems
       const verificationOptions: VerificationOptions = {
         forceMethod: options.forceVerificationMethod,
         aiVerifyFn: async (prompt, systemPrompt) => {
@@ -334,7 +500,7 @@ export class EnhancedGradingService {
       };
 
       const verification = await verifyCalculation(
-        problemText,
+        gpt4oReading,
         aiAnswer,
         verificationOptions
       );
@@ -363,7 +529,7 @@ export class EnhancedGradingService {
 
     return {
       questionNumber: q.questionNumber,
-      problemText: q.problemText,
+      problemText: gpt4oReading,
       aiCalculation: q.aiCalculation,
       aiAnswer: aiAnswer,
       studentAnswer: q.studentAnswer,
@@ -376,7 +542,16 @@ export class EnhancedGradingService {
       readabilityConfidence: q.readabilityConfidence,
       readabilityIssue: q.readabilityIssue,
       discrepancy: discrepancy,
-      // Enhanced fields
+      // Multi-AI fields
+      mathpixReading,
+      mathpixLatex,
+      mathpixText: mathpixReading,
+      gpt4oReading,
+      hasReadingConflict: readingConflict,
+      interpretationOptions,
+      selectedInterpretation: null,
+      ocrConfidence: mathpixData?.confidence,
+      // Verification fields
       difficultyLevel,
       verificationMethod,
       wolframVerified,

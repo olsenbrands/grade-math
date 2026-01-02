@@ -43,6 +43,15 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+/** Problem interpretation option for teacher selection */
+export interface ProblemInterpretationOption {
+  problemText: string;
+  source: 'mathpix' | 'gpt4o' | 'teacher';
+  confidence: number;
+  calculatedAnswer?: string;
+  latex?: string;
+}
+
 export interface QuestionResultData {
   questionNumber: number;
   studentAnswer: string | null;
@@ -53,6 +62,19 @@ export interface QuestionResultData {
   confidence: number;
   feedback?: string;
   partialCredit?: boolean;
+  // Multi-AI transparency fields
+  problemText?: string;
+  mathpixReading?: string;
+  gpt4oReading?: string;
+  hasReadingConflict?: boolean;
+  interpretationOptions?: ProblemInterpretationOption[];
+  selectedInterpretation?: number | null;
+  ocrConfidence?: number;
+  // Verification fields
+  verificationMethod?: 'wolfram' | 'chain_of_thought' | 'none';
+  wolframVerified?: boolean;
+  wolframAnswer?: string;
+  verificationConflict?: boolean;
 }
 
 export interface StudentResultCardProps {
@@ -72,6 +94,8 @@ export interface StudentResultCardProps {
   onViewSubmission?: () => void;
   onShare?: () => void;
   onPrint?: () => void;
+  /** Callback when teacher selects a problem interpretation */
+  onSelectInterpretation?: (questionNumber: number, interpretationIndex: number) => void;
   className?: string;
 }
 
@@ -92,6 +116,7 @@ export function StudentResultCard({
   onViewSubmission,
   onShare,
   onPrint,
+  onSelectInterpretation,
   className,
 }: StudentResultCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -217,7 +242,11 @@ export function StudentResultCard({
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-2 pt-2">
             {questions.map((q) => (
-              <QuestionResultRow key={q.questionNumber} question={q} />
+              <QuestionResultRow
+                key={q.questionNumber}
+                question={q}
+                onSelectInterpretation={onSelectInterpretation}
+              />
             ))}
           </CollapsibleContent>
         </Collapsible>
@@ -255,85 +284,191 @@ export function StudentResultCard({
 }
 
 /**
- * Individual question result row
+ * Individual question result row with multi-AI transparency
  */
-function QuestionResultRow({ question }: { question: QuestionResultData }) {
+function QuestionResultRow({
+  question,
+  onSelectInterpretation,
+}: {
+  question: QuestionResultData;
+  onSelectInterpretation?: (questionNumber: number, interpretationIndex: number) => void;
+}) {
   const isLowConfidence = question.confidence < 0.7;
+  const hasConflict = question.hasReadingConflict;
+  const hasOptions = question.interpretationOptions && question.interpretationOptions.length > 1;
+
+  // Get confidence badge color
+  const getConfidenceBadgeColor = (conf: number) => {
+    if (conf >= 0.9) return 'border-green-300 bg-green-50 text-green-700';
+    if (conf >= 0.7) return 'border-blue-300 bg-blue-50 text-blue-700';
+    return 'border-yellow-300 bg-yellow-50 text-yellow-700';
+  };
 
   return (
     <div
       className={cn(
-        'flex items-start gap-3 rounded-lg border p-3',
+        'rounded-lg border p-3',
         question.isCorrect ? 'border-green-100 bg-green-50/50' : 'border-red-100 bg-red-50/50',
-        isLowConfidence && 'ring-1 ring-yellow-300'
+        isLowConfidence && 'ring-1 ring-yellow-300',
+        hasConflict && 'ring-2 ring-orange-400'
       )}
     >
-      {/* Status icon */}
-      <div
-        className={cn(
-          'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-          question.isCorrect ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
-        )}
-      >
-        {question.isCorrect ? (
-          <Check className="h-4 w-4" />
-        ) : (
-          <X className="h-4 w-4" />
-        )}
-      </div>
-
-      {/* Question details */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">Q{question.questionNumber}</span>
-          {question.partialCredit && (
-            <Badge variant="outline" className="text-xs">
-              Partial
-            </Badge>
+      <div className="flex items-start gap-3">
+        {/* Status icon */}
+        <div
+          className={cn(
+            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
+            question.isCorrect ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
           )}
-          {isLowConfidence && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger>
-                  <Badge variant="outline" className="border-yellow-300 bg-yellow-50 text-yellow-700 text-xs">
-                    <AlertTriangle className="mr-1 h-3 w-3" />
-                    {Math.round(question.confidence * 100)}%
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Low confidence - may need review</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+        >
+          {question.isCorrect ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <X className="h-4 w-4" />
           )}
         </div>
-        <div className="mt-1 text-sm">
-          <p>
-            <span className="text-muted-foreground">Student: </span>
-            <span className={cn(!question.isCorrect && 'text-red-600')}>
-              {question.studentAnswer || '(blank)'}
-            </span>
-          </p>
-          {!question.isCorrect && (
+
+        {/* Question details */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium">Q{question.questionNumber}</span>
+            {question.partialCredit && (
+              <Badge variant="outline" className="text-xs">
+                Partial
+              </Badge>
+            )}
+            {/* OCR Confidence Badge */}
+            {question.ocrConfidence !== undefined && (
+              <Badge variant="outline" className={cn('text-xs', getConfidenceBadgeColor(question.ocrConfidence))}>
+                OCR {Math.round(question.ocrConfidence * 100)}%
+              </Badge>
+            )}
+            {/* Verification Badge */}
+            {question.verificationMethod === 'wolfram' && (
+              <Badge variant="outline" className={cn(
+                'text-xs',
+                question.wolframVerified
+                  ? 'border-green-300 bg-green-50 text-green-700'
+                  : 'border-orange-300 bg-orange-50 text-orange-700'
+              )}>
+                {question.wolframVerified ? 'Wolfram Verified' : 'Wolfram Conflict'}
+              </Badge>
+            )}
+            {/* Reading Conflict Badge */}
+            {hasConflict && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Badge variant="outline" className="border-orange-400 bg-orange-50 text-orange-700 text-xs">
+                      <AlertTriangle className="mr-1 h-3 w-3" />
+                      OCR Conflict
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>Mathpix and GPT-4o read this problem differently. Please verify the correct interpretation below.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {isLowConfidence && !hasConflict && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Badge variant="outline" className="border-yellow-300 bg-yellow-50 text-yellow-700 text-xs">
+                      <AlertTriangle className="mr-1 h-3 w-3" />
+                      {Math.round(question.confidence * 100)}%
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Low confidence - may need review</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
+
+          {/* Problem Text - Show what AI read */}
+          {question.problemText && (
+            <div className="mt-2 p-2 bg-slate-50 rounded border border-slate-200">
+              <p className="text-xs text-muted-foreground mb-1">AI read this as:</p>
+              <p className="text-sm font-mono">{question.problemText}</p>
+            </div>
+          )}
+
+          {/* Interpretation Options - When there's a conflict */}
+          {hasOptions && (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs font-medium text-orange-700">
+                Select the correct interpretation:
+              </p>
+              {question.interpretationOptions!.map((option, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onSelectInterpretation?.(question.questionNumber, idx)}
+                  className={cn(
+                    'w-full text-left p-2 rounded border transition-colors',
+                    question.selectedInterpretation === idx
+                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                      : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/50'
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-muted-foreground">
+                        {option.source === 'mathpix' ? 'Mathpix OCR' : 'GPT-4o Vision'}:
+                      </span>
+                      <p className="text-sm font-mono mt-0.5">{option.problemText}</p>
+                      {option.calculatedAnswer && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Answer: <span className="font-medium text-foreground">{option.calculatedAnswer}</span>
+                        </p>
+                      )}
+                    </div>
+                    <Badge variant="outline" className={cn('text-xs ml-2', getConfidenceBadgeColor(option.confidence))}>
+                      {Math.round(option.confidence * 100)}%
+                    </Badge>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Student Answer vs Correct */}
+          <div className="mt-2 text-sm">
             <p>
-              <span className="text-muted-foreground">Correct: </span>
-              <span className="text-green-600">{question.correctAnswer}</span>
+              <span className="text-muted-foreground">Student: </span>
+              <span className={cn(!question.isCorrect && 'text-red-600')}>
+                {question.studentAnswer || '(blank)'}
+              </span>
+            </p>
+            {!question.isCorrect && (
+              <p>
+                <span className="text-muted-foreground">Correct: </span>
+                <span className="text-green-600">{question.correctAnswer}</span>
+              </p>
+            )}
+            {question.wolframAnswer && question.wolframAnswer !== question.correctAnswer && (
+              <p>
+                <span className="text-muted-foreground">Wolfram: </span>
+                <span className="text-blue-600">{question.wolframAnswer}</span>
+              </p>
+            )}
+          </div>
+
+          {question.feedback && (
+            <p className="mt-2 text-sm text-muted-foreground italic">
+              {question.feedback}
             </p>
           )}
         </div>
-        {question.feedback && (
-          <p className="mt-2 text-sm text-muted-foreground italic">
-            {question.feedback}
-          </p>
-        )}
-      </div>
 
-      {/* Points */}
-      <div className="text-right text-sm">
-        <span className={cn('font-medium', question.isCorrect ? 'text-green-600' : 'text-red-600')}>
-          {question.pointsAwarded}
-        </span>
-        <span className="text-muted-foreground">/{question.pointsPossible}</span>
+        {/* Points */}
+        <div className="text-right text-sm">
+          <span className={cn('font-medium', question.isCorrect ? 'text-green-600' : 'text-red-600')}>
+            {question.pointsAwarded}
+          </span>
+          <span className="text-muted-foreground">/{question.pointsPossible}</span>
+        </div>
       </div>
     </div>
   );

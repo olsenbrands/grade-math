@@ -264,13 +264,49 @@ export interface ComparisonResult {
 }
 
 // =============================================================================
+// Problem Interpretation (for multi-AI conflict resolution)
+// =============================================================================
+
+export interface ProblemInterpretation {
+  /** The problem text as read by this source */
+  problemText: string;
+  /** Source of this interpretation */
+  source: 'mathpix' | 'gpt4o' | 'teacher';
+  /** Confidence score 0-1 */
+  confidence: number;
+  /** Pre-calculated answer if this interpretation is correct */
+  calculatedAnswer?: string;
+  /** LaTeX representation if available */
+  latex?: string;
+}
+
+// =============================================================================
 // Enhanced Question Result (with verification data)
 // =============================================================================
 
 export interface QuestionResultEnhanced extends QuestionResult {
   // OCR data
   mathpixLatex?: string;
+  mathpixText?: string;
   ocrConfidence?: number;
+
+  // Multi-AI Interpretations
+  /** What Mathpix read the problem as */
+  mathpixReading?: string;
+  /** What GPT-4o read the problem as */
+  gpt4oReading?: string;
+  /** Whether Mathpix and GPT-4o disagree on the problem text */
+  hasReadingConflict?: boolean;
+  /** Top 2 interpretations when there's uncertainty */
+  interpretationOptions?: ProblemInterpretation[];
+  /** Index of teacher-selected interpretation (0 or 1), null if not yet selected */
+  selectedInterpretation?: number | null;
+  /** If teacher selected an interpretation, this is the recalculated grade */
+  recalculatedGrade?: {
+    isCorrect: boolean;
+    pointsAwarded: number;
+    correctAnswer: string;
+  };
 
   // Verification
   difficultyLevel?: MathDifficulty;

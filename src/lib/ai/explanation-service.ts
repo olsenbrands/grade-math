@@ -169,7 +169,9 @@ CRITICAL RULES:
 5. For incorrect answers: be encouraging, acknowledge what they tried, then guide them to the right method
 6. Keep it conversational - avoid robotic "Step 1, Step 2" language when possible
 7. Use the teaching methodology's specific approach and techniques
-8. Include visual diagrams that directly relate to the problem context`;
+8. Include visual diagrams that directly relate to the problem context
+9. DO NOT RE-SOLVE THE PROBLEM - The "Correct Answer" provided is authoritative. Explain how to get THAT answer, don't calculate your own.
+10. EACH distinct item gets its OWN separate bar segment with its OWN label - never combine labels like "muffinsscones"`;
 
 function buildExplanationPrompt(
   questions: QuestionForExplanation[],
@@ -211,7 +213,8 @@ TASK: Help this student understand their work like a teacher sitting beside them
 
 YOUR APPROACH:
 - Talk directly to the student about THIS specific problem (use the actual context - muffins, pastries, etc.)
-- Explain how to arrive at the correct answer: ${questions.length > 0 ? 'shown above' : 'provided'}
+- Explain how to arrive at the CORRECT ANSWER shown above - do NOT recalculate or solve the problem yourself
+- The "Correct Answer" field is AUTHORITATIVE - your job is to explain how to get THAT answer
 - Sound like a real teacher having a conversation, not a textbook
 - Reference what you see in their problem - "I see you have 6 muffins and 1 scone..."
 - Walk through the thinking process naturally, as if working alongside them
@@ -267,7 +270,7 @@ RESPOND IN THIS EXACT JSON FORMAT (note: diagram is REQUIRED for word problems):
   "explanations": [
     {
       "questionNumber": 1,
-      "steps": ["Step 1: ...", "Step 2: ...", "Step 3: ..."],
+      "steps": ["Let's look at what we know: there are 6 muffins and 1 scone.", "We want to find the donuts, and all pastries total 170.", "First, let's add 6 + 1 = 7 pastries that aren't donuts.", "So 170 - 7 = 163 donuts."],
       "whatYouDidRight": "string or null",
       "whatToImprove": "string or null",
       "encouragement": "string",
@@ -283,11 +286,16 @@ RESPOND IN THIS EXACT JSON FORMAT (note: diagram is REQUIRED for word problems):
           ],
           "unknownIndex": 2
         },
-        "textFallback": "Bar model showing muffins (6), scones (1), and donuts (?) totaling 170"
+        "textFallback": "Bar model: muffins (6) + scones (1) + donuts (?) = 170 total"
       }
     }
   ]
 }
+
+DIAGRAM RULES:
+- Each distinct item (muffins, scones, donuts) gets its OWN part object with its OWN label
+- NEVER combine labels like "muffinsscones" - keep them SEPARATE
+- The "parts" array must have one entry per item being added together
 
 DIAGRAM IS REQUIRED - The example above shows a bar-model. You MUST include a diagram object for word problems. DO NOT use null for diagram when the problem involves quantities or parts.
 

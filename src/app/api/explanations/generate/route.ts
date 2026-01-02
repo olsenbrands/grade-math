@@ -197,6 +197,7 @@ export async function POST(request: Request) {
               whatToImprove: explanation.whatToImprove,
               encouragement: explanation.encouragement,
               generatedAt: explanation.generatedAt,
+              diagram: explanation.diagram || null, // Include visual diagram!
             }
           : null,
       };

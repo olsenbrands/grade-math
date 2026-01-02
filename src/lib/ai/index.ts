@@ -38,6 +38,8 @@ export {
   getQueueStats,
   getProjectQueueItems,
   cleanupOldItems,
+  resetFailedSubmission,
+  resetAllFailedForProject,
 } from './processing-queue';
 export type { QueuedSubmission } from './processing-queue';
 

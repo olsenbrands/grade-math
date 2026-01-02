@@ -279,6 +279,77 @@ export async function getProjectQueueItems(
 }
 
 /**
+ * Reset a failed submission so it can be retried
+ * This resets the attempts counter and sets status back to pending
+ */
+export async function resetFailedSubmission(
+  submissionId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient();
+
+  // Find the queue item for this submission
+  const { data: item, error: findError } = await supabase
+    .from('processing_queue')
+    .select('id, status, attempts')
+    .eq('submission_id', submissionId)
+    .single();
+
+  if (findError || !item) {
+    return { success: false, error: 'Submission not found in queue' };
+  }
+
+  if (item.status !== 'failed') {
+    return { success: false, error: `Submission is not failed (current status: ${item.status})` };
+  }
+
+  // Reset the item
+  const { error: updateError } = await supabase
+    .from('processing_queue')
+    .update({
+      status: 'pending',
+      attempts: 0,
+      error_message: null,
+      locked_at: null,
+      locked_by: null,
+    })
+    .eq('id', item.id);
+
+  if (updateError) {
+    return { success: false, error: updateError.message };
+  }
+
+  return { success: true };
+}
+
+/**
+ * Reset all failed submissions for a project
+ */
+export async function resetAllFailedForProject(
+  projectId: string
+): Promise<{ success: boolean; resetCount: number; error?: string }> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('processing_queue')
+    .update({
+      status: 'pending',
+      attempts: 0,
+      error_message: null,
+      locked_at: null,
+      locked_by: null,
+    })
+    .eq('project_id', projectId)
+    .eq('status', 'failed')
+    .select('id');
+
+  if (error) {
+    return { success: false, resetCount: 0, error: error.message };
+  }
+
+  return { success: true, resetCount: data?.length || 0 };
+}
+
+/**
  * Delete completed items older than specified days
  */
 export async function cleanupOldItems(daysOld: number = 30): Promise<number> {

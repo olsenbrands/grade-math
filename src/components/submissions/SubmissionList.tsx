@@ -106,55 +106,55 @@ function getServicesUsed(question: QuestionDetail): {
 /**
  * AI Services indicator - shows which services were used with colored dots
  *
- * Dot 1 (OCR):     Green = Mathpix used, Gray = Vision only
- * Dot 2 (Solving): Always green (GPT-4o always used)
- * Dot 3 (Verify):  Blue = Wolfram used, Gray = No verification
+ * All dots are solid green when answer is correct
+ * A ring/stroke around the dot indicates that specific AI service was used
  *
- * Yellow/Orange dots indicate issues or conflicts
+ * Dot 1 (OCR):     Ring = Mathpix used
+ * Dot 2 (Solving): Ring = Always (GPT-4o always used)
+ * Dot 3 (Verify):  Ring = Wolfram used
  */
 function AIServicesIndicator({ question }: { question: QuestionDetail }) {
   const services = getServicesUsed(question);
   const hasConflict = question.hasReadingConflict || question.verificationConflict;
   const hasIssue = question.readabilityIssue || (question.confidence < 0.7);
 
-  // Determine colors for each dot
-  // Dot 1: OCR - Mathpix (bright green) vs Vision-only (light green)
-  const dot1Color = hasConflict
-    ? 'text-orange-500'
-    : services.mathpix
-      ? 'text-emerald-500'  // Bright green = Mathpix
-      : 'text-green-300';   // Light green = Vision only
+  // Base color - green for correct, red for incorrect, yellow for issues
+  const baseColor = hasConflict
+    ? 'bg-orange-500'
+    : hasIssue
+      ? 'bg-yellow-500'
+      : question.isCorrect
+        ? 'bg-green-500'
+        : 'bg-red-500';
 
-  // Dot 2: Solving - Always Vision (green), yellow if low confidence
-  const dot2Color = hasIssue
-    ? 'text-yellow-500'
-    : 'text-green-500';
-
-  // Dot 3: Verification - Wolfram (blue) vs None (gray)
-  const dot3Color = question.verificationConflict
-    ? 'text-orange-500'
-    : services.wolfram
-      ? 'text-blue-500'     // Blue = Wolfram verified
-      : 'text-gray-300';    // Gray = No verification
+  // Ring color when service is used
+  const ringClass = 'ring-2 ring-offset-1';
+  const mathpixRing = services.mathpix ? `${ringClass} ring-emerald-600` : '';
+  const visionRing = `${ringClass} ring-green-600`; // Always used
+  const wolframRing = services.wolfram ? `${ringClass} ring-blue-500` : '';
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex items-center gap-0.5 cursor-help">
-            <span className={`text-sm ${dot1Color}`}>{'\u25CF'}</span>
-            <span className={`text-sm ${dot2Color}`}>{'\u25CF'}</span>
-            <span className={`text-sm ${dot3Color}`}>{services.wolfram ? '\u25CF' : '\u25CB'}</span>
+          <div className="flex items-center gap-1.5 cursor-help">
+            {/* Dot 1: Reading/OCR */}
+            <span className={`inline-block w-2.5 h-2.5 rounded-full ${baseColor} ${mathpixRing}`} />
+            {/* Dot 2: Solving */}
+            <span className={`inline-block w-2.5 h-2.5 rounded-full ${baseColor} ${visionRing}`} />
+            {/* Dot 3: Verification */}
+            <span className={`inline-block w-2.5 h-2.5 rounded-full ${baseColor} ${wolframRing}`} />
           </div>
         </TooltipTrigger>
         <TooltipContent side="left" className="w-56">
           <div className="space-y-2">
             <p className="font-medium text-xs border-b pb-1">AI Services Used</p>
+            <p className="text-xs text-muted-foreground">Ring around dot = service was used</p>
 
             {/* OCR Service */}
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
-                <span className={`${dot1Color}`}>{'\u25CF'}</span>
+                <span className={`inline-block w-2.5 h-2.5 rounded-full bg-green-500 ${mathpixRing}`} />
                 <span>Reading</span>
               </div>
               <span className={services.mathpix ? 'text-emerald-600 font-medium' : 'text-muted-foreground'}>
@@ -165,7 +165,7 @@ function AIServicesIndicator({ question }: { question: QuestionDetail }) {
             {/* Solving Service */}
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
-                <span className={`${dot2Color}`}>{'\u25CF'}</span>
+                <span className={`inline-block w-2.5 h-2.5 rounded-full bg-green-500 ${visionRing}`} />
                 <span>Solving</span>
               </div>
               <span className="text-green-600 font-medium">Active</span>
@@ -174,7 +174,7 @@ function AIServicesIndicator({ question }: { question: QuestionDetail }) {
             {/* Verification Service */}
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
-                <span className={`${dot3Color}`}>{services.wolfram ? '\u25CF' : '\u25CB'}</span>
+                <span className={`inline-block w-2.5 h-2.5 rounded-full bg-green-500 ${wolframRing}`} />
                 <span>Verified</span>
               </div>
               <span className={services.wolfram ? 'text-blue-600 font-medium' : 'text-muted-foreground'}>

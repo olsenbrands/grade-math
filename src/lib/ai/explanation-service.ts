@@ -602,15 +602,24 @@ ${prompt}`,
             let diagramData = rawDiagram.data as Record<string, unknown>;
 
             // POST-PROCESS: Fix total if AI returned a bad value
-            if (diagramData && typeof diagramData.total === 'number' && diagramData.total <= 10) {
-              // Try to extract total from problem text
-              const problemText = questions[idx]?.problemText || '';
+            const currentTotal = diagramData?.total;
+            const problemText = questions[idx]?.problemText || '';
+            console.log(`[EXPLANATION] Q${idx + 1} diagram total: ${currentTotal} (type: ${typeof currentTotal}), problemText: "${problemText.substring(0, 100)}"`);
+
+            // Fix if total is missing, null, undefined, or suspiciously small
+            const needsFix = !currentTotal ||
+                            (typeof currentTotal === 'number' && currentTotal <= 10) ||
+                            currentTotal === null ||
+                            currentTotal === undefined;
+
+            if (diagramData && needsFix) {
               const totalPatterns = [
                 /total[^0-9]*=\s*(\d+)/i,           // "total = 170", "total pastries = 170"
-                /=\s*(\d+)\s*$/,                     // "... = 170" at end
+                /=\s*(\d+)/,                         // "... = 170" anywhere
                 /altogether\s+(\d+)/i,               // "altogether 170"
                 /(\d+)\s+in\s+all/i,                 // "170 in all"
                 /total\s+(?:of\s+)?(\d+)/i,          // "total of 170", "total 170"
+                /(\d{2,})/,                          // Any 2+ digit number as last resort
               ];
 
               for (const pattern of totalPatterns) {
@@ -618,7 +627,7 @@ ${prompt}`,
                 if (match && match[1]) {
                   const extractedTotal = parseInt(match[1], 10);
                   if (extractedTotal > 10) {
-                    console.log(`[EXPLANATION] Fixed total: ${diagramData.total} -> ${extractedTotal} (from problem text)`);
+                    console.log(`[EXPLANATION] Fixed total: ${currentTotal} -> ${extractedTotal} (pattern: ${pattern})`);
                     diagramData = { ...diagramData, total: extractedTotal };
                     break;
                   }
